@@ -1,6 +1,6 @@
 import { BOARD_SIZE, COL_W, COL_X, GH, GRID, GW, ROW_H, ROW_Y, sectorAt } from '../shared/board';
 import {
-  BASE_KINDS, COLOR_FR, LETTER, MISSILE_COST, SECTORS, UNITS, armyOf, describeOrder, executeOrder, hqOf, locName,
+  BASE_KINDS, COLOR_NAME, LETTER, MISSILE_COST, SECTORS, UNITS, armyOf, describeOrder, executeOrder, hqOf, locName,
   newCtx, pickMissile, reachable, totalPower, value,
   type Color, type GameState, type Kind, type Loc, type Order,
 } from '../shared/rules';
@@ -50,13 +50,13 @@ function connect(name: string) {
     } else error = m.message;
     render();
   };
-  ws.onclose = () => { error = 'Connexion perdue, reconnexion…'; render(); setTimeout(() => connect(name), 2000); };
+  ws.onclose = () => { error = 'Connection lost, reconnecting…'; render(); setTimeout(() => connect(name), 2000); };
 }
 
 // ---------- Screens ----------
 function render() {
   if (!roomId()) return renderHome();
-  if (!room) { app.innerHTML = `<p class="muted center">Connexion…</p>`; return; }
+  if (!room) { app.innerHTML = `<p class="muted center">Connecting…</p>`; return; }
   if (!room.game) return renderLobby(room);
   renderGame(room, room.game);
 }
@@ -64,9 +64,9 @@ function render() {
 function renderHome() {
   app.innerHTML = `
     <div class="card narrow">
-      <h1>Power, le jeu</h1>
-      <p class="muted">Crée une partie et envoie le lien à tes amis (2 à 4 joueurs).</p>
-      <button id="create">Créer une partie</button>
+      <h1>Power</h1>
+      <p class="muted">Create a game and send the link to your friends (2 to 4 players).</p>
+      <button id="create">Create a game</button>
     </div>`;
   $('#create')!.onclick = () => { location.hash = Math.random().toString(36).slice(2, 8); };
 }
@@ -75,12 +75,12 @@ function askNameAndJoin() {
   const saved = store('power.name', () => '');
   app.innerHTML = `
     <div class="card narrow">
-      <h1>Power, le jeu</h1>
-      <label>Ton nom <input id="name" maxlength="20" value="${esc(saved)}" autofocus></label>
-      <button id="join">Rejoindre la partie</button>
+      <h1>Power</h1>
+      <label>Your name <input id="name" maxlength="20" value="${esc(saved)}" autofocus></label>
+      <button id="join">Join the game</button>
     </div>`;
   const go = () => {
-    const name = ($('#name') as HTMLInputElement).value.trim() || 'Joueur';
+    const name = ($('#name') as HTMLInputElement).value.trim() || 'Player';
     try { localStorage.setItem('power.name', name); } catch { /* private mode */ }
     connect(name); render();
   };
@@ -91,21 +91,21 @@ function askNameAndJoin() {
 function renderLobby(r: RoomView) {
   const host = r.you === 0;
   const n = r.seats.length;
-  const variant = n === 2 ? 'À 2 : chaque joueur commande deux armées voisines (10 ordres par manche).'
-    : n === 3 ? 'À 3 : le territoire Bleu reste vide.' : n === 4 ? 'À 4 : une armée chacun.' : '';
+  const variant = n === 2 ? '2 players: each player commands two neighbouring armies (10 orders per round).'
+    : n === 3 ? '3 players: the Blue territory stays empty.' : n === 4 ? '4 players: one army each.' : '';
   const opt = (id: string, cur: number, vals: [number, string][]) =>
     `<select id="${id}" ${host ? '' : 'disabled'}>${vals.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   app.innerHTML = `
     <div class="card narrow">
-      <h1>Partie ${esc(r.id)}</h1>
-      <p>Envoie ce lien à tes amis :</p>
-      <div class="row"><input readonly value="${esc(location.href)}"><button id="copy" class="secondary">Copier</button></div>
-      <ul class="seats">${r.seats.map((s, i) => `<li>${esc(s.name)}${i === r.you ? ' (toi)' : ''}${i === 0 ? ' · hôte' : ''}${s.connected ? '' : ' <span class="muted">· déconnecté</span>'}</li>`).join('')}</ul>
+      <h1>Game ${esc(r.id)}</h1>
+      <p>Send this link to your friends:</p>
+      <div class="row"><input readonly value="${esc(location.href)}"><button id="copy" class="secondary">Copy</button></div>
+      <ul class="seats">${r.seats.map((s, i) => `<li>${esc(s.name)}${i === r.you ? ' (you)' : ''}${i === 0 ? ' · host' : ''}${s.connected ? '' : ' <span class="muted">· disconnected</span>'}</li>`).join('')}</ul>
       <p class="muted">${variant}</p>
-      <label>Temps pour écrire les ordres ${opt('timer', r.options.timerMin, [[0, 'Illimité'], [1, '1 min'], [2, '2 min'], [3, '3 min (règle)'], [5, '5 min'], [10, '10 min']])}</label>
-      <label>Durée de la partie ${opt('limit', r.options.limitMin, [[0, 'Jusqu’au dernier drapeau'], [60, '1 h'], [90, '1 h 30'], [120, '2 h (règle)'], [180, '3 h']])}</label>
-      ${r.you === null ? '<p class="error">La salle est pleine ou la partie a commencé.</p>' : ''}
-      ${host ? `<button id="start" ${n < 2 ? 'disabled' : ''}>Lancer la partie</button>` : '<p class="muted">En attente que l’hôte lance la partie…</p>'}
+      <label>Time to write orders ${opt('timer', r.options.timerMin, [[0, 'Unlimited'], [1, '1 min'], [2, '2 min'], [3, '3 min (rules)'], [5, '5 min'], [10, '10 min']])}</label>
+      <label>Game length ${opt('limit', r.options.limitMin, [[0, 'Until the last flag'], [60, '1 h'], [90, '1 h 30'], [120, '2 h (rules)'], [180, '3 h']])}</label>
+      ${r.you === null ? '<p class="error">This game is full or has already started.</p>' : ''}
+      ${host ? `<button id="start" ${n < 2 ? 'disabled' : ''}>Start the game</button>` : '<p class="muted">Waiting for the host to start the game…</p>'}
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
     </div>`;
   $('#copy')!.onclick = () => navigator.clipboard?.writeText(location.href);
@@ -127,7 +127,7 @@ function project(g: GameState) {
   return { s, ctx, errors };
 }
 function safeExec(s: GameState, ctx: ReturnType<typeof newCtx>, color: Color, o: Order) {
-  try { return executeOrder(s, ctx, color, o); } catch { return 'Ordre invalide'; }
+  try { return executeOrder(s, ctx, color, o); } catch { return 'Invalid order'; }
 }
 
 function renderGame(r: RoomView, g: GameState) {
@@ -195,38 +195,38 @@ function renderGame(r: RoomView, g: GameState) {
   // ----- Panel -----
   const deadline = r.deadline ? r.deadline - clockSkew : null;
   const head = `
-    <div class="row between"><h2>Manche ${g.round}</h2>${deadline && !over ? `<span class="timer" id="timer"></span>` : ''}</div>
-    ${g.lastRound && !over ? '<p class="banner">Dernière manche !</p>' : ''}
+    <div class="row between"><h2>Round ${g.round}</h2>${deadline && !over ? `<span class="timer" id="timer"></span>` : ''}</div>
+    ${g.lastRound && !over ? '<p class="banner">Last round!</p>' : ''}
     <ul class="players">${g.seats.map((seat, i) => `
       <li class="${seat.armies.every(c => !armyOf(g, c).alive) ? 'dead' : ''}">
-        <b>${esc(seat.name)}</b>${i === me ? ' (toi)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
+        <b>${esc(seat.name)}</b>${i === me ? ' (you)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
         <span class="muted">· puissance ${totalPower(g, i)}</span>
-        ${seat.armies.map(c => { const a = armyOf(g, c); return `<div class="army"><span class="dot ${c}"></span>${COLOR_FR[c]} ${a.alive ? '' : '☠️'} <span class="muted">Power ${a.power} · 🚩${a.flags.length} · réserve ${kindsSummary(g.pieces.filter(p => p.army === c && p.loc === 'RV').map(p => p.kind)) || '—'}</span></div>`; }).join('')}
+        ${seat.armies.map(c => { const a = armyOf(g, c); return `<div class="army"><span class="dot ${c}"></span>${COLOR_NAME[c]} ${a.alive ? '' : '☠️'} <span class="muted">Power ${a.power} · 🚩${a.flags.length} · reserve ${kindsSummary(g.pieces.filter(p => p.army === c && p.loc === 'RV').map(p => p.kind)) || '—'}</span></div>`; }).join('')}
       </li>`).join('')}
     </ul>`;
 
   let action = '';
-  if (over) action = `<p class="banner">🏆 ${esc(g.seats[g.winner!].name)} gagne la partie !</p>`;
-  else if (me === null) action = `<p class="muted">Tu regardes la partie.</p>`;
-  else if (!myArmies.some(c => armyOf(g, c).alive)) action = `<p class="muted">Tes drapeaux sont tombés. Tu peux regarder la fin de la partie.</p>`;
-  else if (submitted) action = `<p>Ordres envoyés. En attente des autres…</p><button id="edit" class="secondary">Modifier mes ordres</button>`;
+  if (over) action = `<p class="banner">🏆 ${esc(g.seats[g.winner!].name)} wins the game!</p>`;
+  else if (me === null) action = `<p class="muted">You are watching this game.</p>`;
+  else if (!myArmies.some(c => armyOf(g, c).alive)) action = `<p class="muted">Your flags have fallen. You can watch the rest of the game.</p>`;
+  else if (submitted) action = `<p>Orders sent. Waiting for the others…</p><button id="edit" class="secondary">Edit my orders</button>`;
   else {
     const tabs = myArmies.length > 1 ? `<div class="tabs">${myArmies.filter(c => armyOf(g, c).alive).map(c =>
-      `<button class="tab ${c === army ? 'on' : ''}" data-army="${c}"><span class="dot ${c}"></span>${COLOR_FR[c]} (${(orders[c] ?? []).length}/${g.ordersPerArmy})</button>`).join('')}</div>` : '';
+      `<button class="tab ${c === army ? 'on' : ''}" data-army="${c}"><span class="dot ${c}"></span>${COLOR_NAME[c]} (${(orders[c] ?? []).length}/${g.ordersPerArmy})</button>`).join('')}</div>` : '';
     action = `${tabs}
-      ${mode ? `<div class="box">${mode.t === 'move' ? `Clique où envoyer ${UNITS[mode.kind].name}.` : `Clique la cible du méga-missile, ou une réserve : ${g.armies.filter(a => a.alive).map(a => `<button class="mini" data-reserve="${a.color}">Réserve ${LETTER[a.color]}</button>`).join(' ')}`} <button id="cancel" class="secondary mini">Annuler</button></div>` : ''}
+      ${mode ? `<div class="box">${mode.t === 'move' ? `Click where to send the ${UNITS[mode.kind].name}.` : `Click the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="mini" data-reserve="${a.color}">Reserve ${LETTER[a.color]}</button>`).join(' ')}`} <button id="cancel" class="secondary mini">Cancel</button></div>` : ''}
       ${!mode && sel !== null ? locPanel(proj, ctx, sel) : ''}
-      ${!mode && sel === null ? `<p class="muted">Clique un secteur avec tes pièces, ou ta réserve ci-dessous. ${g.ordersPerArmy} ordres maximum par armée.</p>` : ''}
-      <button class="secondary wide" id="reserve">Réserve ${COLOR_FR[army!]} · Power ${armyOf(proj, army!).power}</button>
-      <h3>Ordres ${COLOR_FR[army!]} (${list.length}/${g.ordersPerArmy})</h3>
-      <ol class="orders">${list.map((o, i) => `<li class="${errors.has(o) ? 'bad' : ''}">${esc(describeOrder(o, army!))}${errors.has(o) ? ` <span class="muted">(${esc(errors.get(o)!)})</span>` : ''} <button class="mini secondary" data-del="${i}">✕</button></li>`).join('') || '<li class="muted">Aucun ordre</li>'}</ol>
-      <div class="row"><button id="submit">Envoyer mes ordres</button>${r.deadline && !r.seats[me].pauseUsed ? '<button id="pause" class="secondary">Pause (+3 min)</button>' : ''}</div>`;
+      ${!mode && sel === null ? `<p class="muted">Click a sector with your pieces, or your reserve below. Up to ${g.ordersPerArmy} orders per army.</p>` : ''}
+      <button class="secondary wide" id="reserve">${COLOR_NAME[army!]} reserve · Power ${armyOf(proj, army!).power}</button>
+      <h3>${COLOR_NAME[army!]} orders (${list.length}/${g.ordersPerArmy})</h3>
+      <ol class="orders">${list.map((o, i) => `<li class="${errors.has(o) ? 'bad' : ''}">${esc(describeOrder(o, army!))}${errors.has(o) ? ` <span class="muted">(${esc(errors.get(o)!)})</span>` : ''} <button class="mini secondary" data-del="${i}">✕</button></li>`).join('') || '<li class="muted">No orders</li>'}</ol>
+      <div class="row"><button id="submit">Send my orders</button>${r.deadline && !r.seats[me].pauseUsed ? '<button id="pause" class="secondary">Pause (+3 min)</button>' : ''}</div>`;
   }
 
   const report = g.report ? `
-    <h3>Manche ${g.report.round}</h3>
-    <ul class="log">${g.report.events.map(e => `<li>${esc(e)}</li>`).join('') || '<li class="muted">Aucun combat.</li>'}</ul>
-    <details><summary>Feuilles d’ordres</summary>${g.report.orders.map(o => `<p><span class="dot ${o.army}"></span><b>${COLOR_FR[o.army]}</b></p><ol class="orders">${o.results.map(x => `<li class="${x.ok ? '' : 'bad'}">${esc(describeOrder(x.order, o.army))}${x.ok ? '' : ` <span class="muted">(${esc(x.note ?? '')})</span>`}</li>`).join('') || '<li class="muted">Aucun ordre</li>'}</ol>`).join('')}</details>` : '';
+    <h3>Round ${g.report.round}</h3>
+    <ul class="log">${g.report.events.map(e => `<li>${esc(e)}</li>`).join('') || '<li class="muted">No battles.</li>'}</ul>
+    <details><summary>Order sheets</summary>${g.report.orders.map(o => `<p><span class="dot ${o.army}"></span><b>${COLOR_NAME[o.army]}</b></p><ol class="orders">${o.results.map(x => `<li class="${x.ok ? '' : 'bad'}">${esc(describeOrder(x.order, o.army))}${x.ok ? '' : ` <span class="muted">(${esc(x.note ?? '')})</span>`}</li>`).join('') || '<li class="muted">No orders</li>'}</ol>`).join('')}</details>` : '';
 
   app.innerHTML = `
     <div class="game">
@@ -269,7 +269,7 @@ function renderGame(r: RoomView, g: GameState) {
 
   function add(o: Order) {
     const cur = orders[army!] ?? [];
-    if (cur.length >= g.ordersPerArmy) { error = `Maximum ${g.ordersPerArmy} ordres`; mode = null; return render(); }
+    if (cur.length >= g.ordersPerArmy) { error = `Up to ${g.ordersPerArmy} orders`; mode = null; return render(); }
     const err = safeExec(structuredClone(proj), structuredClone(ctx), army!, o);
     if (err) { error = err; mode = null; return render(); }
     orders[army!] = [...cur, o];
@@ -288,17 +288,17 @@ function locPanel(s: GameState, ctx: ReturnType<typeof newCtx>, at: Loc) {
   const rows = kinds.map(k => {
     const all = ps.filter(p => p.kind === k), free = all.filter(p => !ctx.moved.has(p.id));
     const btns = [
-      k !== 'M' && free.length ? `<button class="mini" data-move="${k}">${at === 'RV' ? 'Vers le QG' : 'Déplacer'}</button>` : '',
+      k !== 'M' && free.length ? `<button class="mini" data-move="${k}">${at === 'RV' ? 'To HQ' : 'Move'}</button>` : '',
       UNITS[k].up && all.length >= 3 ? `<button class="mini secondary" data-upgrade="${k}">3 → ${UNITS[UNITS[k].up!].name}</button>` : '',
-      k === 'M' ? `<button class="mini" data-launch>Lancer</button>` : '',
+      k === 'M' ? `<button class="mini" data-launch>Launch</button>` : '',
     ].join(' ');
-    return `<div class="row"><span>${UNITS[k].name} ×${all.length}${free.length < all.length && k !== 'M' ? ` <span class="muted">(${all.length - free.length} déjà joué)</span>` : ''}</span>${btns}</div>`;
+    return `<div class="row"><span>${UNITS[k].name} ×${all.length}${free.length < all.length && k !== 'M' ? ` <span class="muted">(${all.length - free.length} already ordered)</span>` : ''}</span>${btns}</div>`;
   }).join('');
-  const buys = at === 'RV' ? `<div class="row">Acheter : ${BASE_KINDS.map(k => `<button class="mini secondary" data-buy="${k}" ${a.power < UNITS[k].power ? 'disabled' : ''}>${UNITS[k].name} (${UNITS[k].power})</button>`).join(' ')}</div>` : '';
+  const buys = at === 'RV' ? `<div class="row">Buy: ${BASE_KINDS.map(k => `<button class="mini secondary" data-buy="${k}" ${a.power < UNITS[k].power ? 'disabled' : ''}>${UNITS[k].name} (${UNITS[k].power})</button>`).join(' ')}</div>` : '';
   const canMissile = value(ps) + (at === 'RV' ? a.power : 0) >= MISSILE_COST;
-  return `<div class="box"><b>${at === 'RV' ? `Réserve ${COLOR_FR[army!]} · Power ${a.power}` : SECTORS[at].name}</b>
-    ${rows || '<p class="muted">Aucune pièce.</p>'}${buys}
-    ${canMissile ? `<button class="mini" id="missile">Créer un méga-missile (≥ ${MISSILE_COST})</button>` : ''}</div>`;
+  return `<div class="box"><b>${at === 'RV' ? `${COLOR_NAME[army!]} reserve · Power ${a.power}` : SECTORS[at].name}</b>
+    ${rows || '<p class="muted">No pieces.</p>'}${buys}
+    ${canMissile ? `<button class="mini" id="missile">Build a megamissile (≥ ${MISSILE_COST})</button>` : ''}</div>`;
 }
 
 function changed() {
@@ -308,7 +308,7 @@ function changed() {
 
 function kindsSummary(kinds: Kind[]) {
   const order: Kind[] = ['S', 'R', 'T', 'A', 'C', 'B', 'D', 'CR', 'M'];
-  return order.filter(k => kinds.includes(k)).map(k => `${k}${kinds.filter(x => x === k).length}`).join(' ');
+  return order.filter(k => kinds.includes(k)).map(k => `${UNITS[k].abbr}${kinds.filter(x => x === k).length}`).join(' ');
 }
 function flagsAt(g: GameState, c: Color) {
   const a = armyOf(g, c);

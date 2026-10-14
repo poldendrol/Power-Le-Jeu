@@ -1,22 +1,22 @@
-// Rules of Power, le jeu, following http://jeuxstrategie.free.fr/Power_complet.php
-import { COLORS, COLOR_FR, LETTER, SECTORS, hqOf, type Color } from './board';
-export { COLORS, COLOR_FR, LETTER, SECTORS, hqOf, type Color };
+// Rules of Power, following http://jeuxstrategie.free.fr/Power_complet.php
+import { COLORS, COLOR_NAME, LETTER, SECTORS, hqOf, type Color } from './board';
+export { COLORS, COLOR_NAME, LETTER, SECTORS, hqOf, type Color };
 
 export type Kind = 'S' | 'T' | 'C' | 'D' | 'R' | 'A' | 'B' | 'CR' | 'M';
 export type BaseKind = 'S' | 'T' | 'C' | 'D';
 export type Mobility = 'ground' | 'air' | 'ship' | 'none';
 
-export interface UnitSpec { name: string; power: number; move: number; mobility: Mobility; group: 1 | 2 | 0; up?: Kind; base?: BaseKind }
+export interface UnitSpec { name: string; abbr: string; power: number; move: number; mobility: Mobility; group: 1 | 2 | 0; up?: Kind; base?: BaseKind }
 export const UNITS: Record<Kind, UnitSpec> = {
-  S:  { name: 'Soldat',         power: 2,  move: 2, mobility: 'ground', group: 1, up: 'R' },
-  T:  { name: 'Tank',           power: 3,  move: 3, mobility: 'ground', group: 1, up: 'A' },
-  C:  { name: 'Chasseur',       power: 5,  move: 5, mobility: 'air',    group: 1, up: 'B' },
-  D:  { name: 'Destroyer',      power: 10, move: 1, mobility: 'ship',   group: 1, up: 'CR' },
-  R:  { name: 'Régiment',       power: 20, move: 2, mobility: 'ground', group: 2, base: 'S' },
-  A:  { name: 'Tank d’assaut',  power: 30, move: 3, mobility: 'ground', group: 2, base: 'T' },
-  B:  { name: 'Bombardier',     power: 25, move: 5, mobility: 'air',    group: 2, base: 'C' },
-  CR: { name: 'Croiseur',       power: 50, move: 1, mobility: 'ship',   group: 2, base: 'D' },
-  M:  { name: 'Méga-missile',   power: 0,  move: 0, mobility: 'none',   group: 0 },
+  S:  { name: 'Infantry',       abbr: 'I',  power: 2,  move: 2, mobility: 'ground', group: 1, up: 'R' },
+  T:  { name: 'Tank',           abbr: 'T',  power: 3,  move: 3, mobility: 'ground', group: 1, up: 'A' },
+  C:  { name: 'Fighter',        abbr: 'F',  power: 5,  move: 5, mobility: 'air',    group: 1, up: 'B' },
+  D:  { name: 'Destroyer',      abbr: 'D',  power: 10, move: 1, mobility: 'ship',   group: 1, up: 'CR' },
+  R:  { name: 'Regiment',       abbr: 'R',  power: 20, move: 2, mobility: 'ground', group: 2, base: 'S' },
+  A:  { name: 'Heavy Tank',     abbr: 'HT', power: 30, move: 3, mobility: 'ground', group: 2, base: 'T' },
+  B:  { name: 'Bomber',         abbr: 'B',  power: 25, move: 5, mobility: 'air',    group: 2, base: 'C' },
+  CR: { name: 'Cruiser',        abbr: 'C',  power: 50, move: 1, mobility: 'ship',   group: 2, base: 'D' },
+  M:  { name: 'Megamissile',    abbr: 'M',  power: 0,  move: 0, mobility: 'none',   group: 0 },
 };
 export const KINDS = Object.keys(UNITS) as Kind[];
 export const BASE_KINDS: BaseKind[] = ['S', 'T', 'C', 'D'];
@@ -84,7 +84,7 @@ export type Order =
 
 export function newGame(names: string[]): GameState {
   const n = names.length;
-  if (n < 2 || n > 4) throw new Error('2 à 4 joueurs');
+  if (n < 2 || n > 4) throw new Error('2 to 4 players');
   // Two players: each commands two neighbouring armies. Three players: the blue territory stays empty.
   const split: Color[][] = n === 2 ? [['yellow', 'blue'], ['green', 'red']] : COLORS.slice(0, n).map(c => [c]);
   const s: GameState = {
@@ -101,17 +101,17 @@ export function newGame(names: string[]): GameState {
 export const armyOf = (s: GameState, c: Color) => s.armies.find(a => a.color === c)!;
 export const seatOfArmy = (s: GameState, c: Color) => armyOf(s, c).seat;
 export const value = (ps: Piece[]) => ps.reduce((t, p) => t + UNITS[p.kind].power, 0);
-export const locName = (l: Loc, army?: Color) => l === 'RV' ? (army ? `Réserve ${LETTER[army]}` : 'Réserve') : SECTORS[l].code;
+export const locName = (l: Loc, army?: Color) => l === 'RV' ? (army ? `Reserve ${LETTER[army]}` : 'Reserve') : SECTORS[l].code;
 export const totalPower = (s: GameState, seat: number) =>
   s.armies.filter(a => a.seat === seat).reduce((t, a) => t + a.power + value(s.pieces.filter(p => p.army === a.color)), 0);
 
 export function describeOrder(o: Order, army: Color): string {
   switch (o.type) {
     case 'move': return `${UNITS[o.kind].name} ${locName(o.from, army)} → ${locName(o.to)}`;
-    case 'buy': return `Échanger ${UNITS[o.kind].power} Power contre 1 ${UNITS[o.kind].name}`;
+    case 'buy': return `Exchange ${UNITS[o.kind].power} Power for 1 ${UNITS[o.kind].name}`;
     case 'upgrade': return `3 ${UNITS[o.kind].name} → 1 ${UNITS[UNITS[o.kind].up!].name} (${locName(o.at, army)})`;
-    case 'missile': return `Créer un méga-missile (${locName(o.at, army)})`;
-    case 'launch': return `Lancer un méga-missile sur ${o.target === 'RV' ? `la réserve ${LETTER[o.reserveOf!]}` : locName(o.target)}`;
+    case 'missile': return `Build a megamissile (${locName(o.at, army)})`;
+    case 'launch': return `Launch a megamissile at ${o.target === 'RV' ? `Reserve ${LETTER[o.reserveOf!]}` : locName(o.target)}`;
   }
 }
 
@@ -129,32 +129,32 @@ const piecesAt = (s: GameState, army: Color, loc: Loc, kind?: Kind) =>
 /** Apply one order for `army`. Returns an error (the order is then skipped) or null. */
 export function executeOrder(s: GameState, ctx: Ctx, army: Color, o: Order): string | null {
   const a = armyOf(s, army);
-  if (!a.alive) return 'Armée éliminée';
+  if (!a.alive) return 'Army eliminated';
   const isLoc = (l: unknown) => l === 'RV' || (typeof l === 'number' && !!SECTORS[l]);
-  if ('kind' in o && !UNITS[o.kind]) return 'Ordre invalide';
-  if (('from' in o && !isLoc(o.from)) || ('at' in o && !isLoc(o.at)) || ('to' in o && !SECTORS[o.to])) return 'Ordre invalide';
+  if ('kind' in o && !UNITS[o.kind]) return 'Invalid order';
+  if (('from' in o && !isLoc(o.from)) || ('at' in o && !isLoc(o.at)) || ('to' in o && !SECTORS[o.to])) return 'Invalid order';
   switch (o.type) {
     case 'move': {
       const p = piecesAt(s, army, o.from, o.kind).find(p => !ctx.moved.has(p.id));
-      if (!p) return `Aucun ${UNITS[o.kind].name} disponible en ${locName(o.from, army)}`;
-      if (o.kind === 'M') return 'Un méga-missile ne se déplace pas';
-      if (o.from === 'RV') { if (o.to !== hqOf(army)) return 'Depuis la réserve, uniquement vers son QG'; }
-      else if (!reachable(o.kind, o.from).has(o.to)) return `${UNITS[o.kind].name} ne peut pas aller de ${locName(o.from)} à ${locName(o.to)}`;
+      if (!p) return `No ${UNITS[o.kind].name} available on ${locName(o.from, army)}`;
+      if (o.kind === 'M') return 'A megamissile cannot move';
+      if (o.from === 'RV') { if (o.to !== hqOf(army)) return 'From the reserve, pieces can only go to their HQ'; }
+      else if (!reachable(o.kind, o.from).has(o.to)) return `${UNITS[o.kind].name} cannot go from ${locName(o.from)} to ${locName(o.to)}`;
       ctx.moved.add(p.id); ctx.prev.set(p.id, p.loc); p.loc = o.to;
       return null;
     }
     case 'buy': {
       const cost = UNITS[o.kind]?.power;
-      if (!BASE_KINDS.includes(o.kind)) return 'Échange invalide';
-      if (a.power < cost) return 'Pas assez de Power';
+      if (!BASE_KINDS.includes(o.kind)) return 'Invalid exchange';
+      if (a.power < cost) return 'Not enough Power';
       a.power -= cost;
       s.pieces.push({ id: s.nextId++, kind: o.kind, army, loc: 'RV' });
       return null;
     }
     case 'upgrade': {
-      if (!BASE_KINDS.includes(o.kind)) return 'Échange invalide';
+      if (!BASE_KINDS.includes(o.kind)) return 'Invalid exchange';
       const three = piecesAt(s, army, o.at, o.kind).slice(0, 3);
-      if (three.length < 3) return `Il faut 3 ${UNITS[o.kind].name} sur le même secteur`;
+      if (three.length < 3) return `Needs 3 ${UNITS[o.kind].name} on the same sector`;
       const gone = new Set(three.map(p => p.id));
       s.pieces = s.pieces.filter(p => !gone.has(p.id));
       const np = { id: s.nextId++, kind: UNITS[o.kind].up!, army, loc: o.at };
@@ -164,15 +164,15 @@ export function executeOrder(s: GameState, ctx: Ctx, army: Color, o: Order): str
     }
     case 'missile': {
       const power = o.at === 'RV' ? Math.max(0, Math.floor(o.power || 0)) : 0;
-      if (power > a.power) return 'Pas assez de Power';
+      if (power > a.power) return 'Not enough Power';
       const used: Piece[] = [];
       for (const [k, n] of Object.entries(o.use) as [Kind, number][]) {
         if (k === 'M' || !n) continue;
         const avail = piecesAt(s, army, o.at, k).filter(p => !used.includes(p));
-        if (avail.length < n) return 'Pièces manquantes pour le méga-missile';
+        if (avail.length < n) return 'Missing pieces for the megamissile';
         used.push(...avail.slice(0, n));
       }
-      if (value(used) + power < MISSILE_COST) return `Il faut au moins ${MISSILE_COST} de puissance`;
+      if (value(used) + power < MISSILE_COST) return `Needs at least ${MISSILE_COST} power`;
       a.power -= power;
       const gone = new Set(used.map(p => p.id));
       s.pieces = s.pieces.filter(p => !gone.has(p.id));
@@ -182,14 +182,14 @@ export function executeOrder(s: GameState, ctx: Ctx, army: Color, o: Order): str
     }
     case 'launch': {
       const m = piecesAt(s, army, o.from, 'M')[0];
-      if (!m) return `Pas de méga-missile en ${locName(o.from, army)}`;
-      if (o.target === 'RV' ? !o.reserveOf || !armyOf(s, o.reserveOf) : !SECTORS[o.target]) return 'Cible invalide';
+      if (!m) return `No megamissile on ${locName(o.from, army)}`;
+      if (o.target === 'RV' ? !o.reserveOf || !armyOf(s, o.reserveOf) : !SECTORS[o.target]) return 'Invalid target';
       s.pieces = s.pieces.filter(p => p !== m);
       ctx.launches.push({ army, target: o.target, reserveOf: o.reserveOf });
       return null;
     }
   }
-  return 'Ordre inconnu';
+  return 'Unknown order';
 }
 
 /** Best set of pieces at `at` reaching MISSILE_COST with the least waste (Power fills the gap in reserve). */
@@ -235,7 +235,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
       const list = (orders[color] ?? []).slice(0, s.ordersPerArmy);
       const results = list.map(o => {
         let err: string | null;
-        try { err = executeOrder(s, ctx, color, o); } catch { err = 'Ordre invalide'; }
+        try { err = executeOrder(s, ctx, color, o); } catch { err = 'Invalid order'; }
         return { order: o, ok: !err, note: err ?? undefined };
       });
       report.orders.push({ army: color, results });
@@ -243,12 +243,12 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
     }
   }
 
-  // Méga-missiles land once every piece has moved.
+  // Megamissiles land once every piece has moved.
   for (const l of ctx.launches) {
     const hit = l.target === 'RV' ? s.pieces.filter(p => p.army === l.reserveOf && p.loc === 'RV') : s.pieces.filter(p => p.loc === l.target);
     const gone = new Set(hit.map(p => p.id));
     s.pieces = s.pieces.filter(p => !gone.has(p.id));
-    ev(`💥 ${COLOR_FR[l.army]} lance un méga-missile sur ${l.target === 'RV' ? `la réserve ${LETTER[l.reserveOf!]}` : locName(l.target)} : ${hit.length} pièce(s) détruite(s)`);
+    ev(`💥 ${COLOR_NAME[l.army]} launches a megamissile at ${l.target === 'RV' ? `Reserve ${LETTER[l.reserveOf!]}` : locName(l.target)}: ${hit.length} piece(s) destroyed`);
   }
 
   // 3. Conflicts. Ties first: tied pieces that moved bounce back once.
@@ -272,7 +272,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
       const back = ps.filter(p => tied.has(seatOfArmy(s, p.army)) && ctx.moved.has(p.id) && ctx.prev.has(p.id) && !rebounded.has(p.id));
       if (!back.length) continue;
       for (const p of back) { p.loc = ctx.prev.get(p.id)!; rebounded.add(p.id); }
-      ev(`↩️ ${locName(loc)} : égalité (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}), les pièces arrivées repartent`);
+      ev(`↩️ ${locName(loc)}: tie (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}), arriving pieces bounce back`);
       bounced = true;
     }
     if (!bounced) break;
@@ -280,7 +280,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
   // 4. Captures: the strongest side takes every enemy piece on the sector.
   for (const [loc, ps] of contested()) {
     const t = totals(ps);
-    if (t[0].p === t[1].p) { ev(`⚖️ ${locName(loc)} : égalité persistante, personne ne capture`); continue; }
+    if (t[0].p === t[1].p) { ev(`⚖️ ${locName(loc)}: still tied, nobody captures`); continue; }
     const win = t[0].seat;
     const mine = ps.filter(p => seatOfArmy(s, p.army) === win);
     // Captured pieces go to the reserve of the winning army with the most power here.
@@ -288,7 +288,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
     const to = byArmy[0].c;
     const lost = ps.filter(p => seatOfArmy(s, p.army) !== win);
     for (const p of lost) { p.army = to; p.loc = 'RV'; }
-    ev(`⚔️ ${locName(loc)} : ${seatName(win)} gagne (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}) et capture ${lost.length} pièce(s)`);
+    ev(`⚔️ ${locName(loc)}: ${seatName(win)} wins (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}) and captures ${lost.length} piece(s)`);
   }
 
   // 5. Power: 1 per enemy territory (still holding its flag) occupied, capped per army.
@@ -302,10 +302,10 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
       if (owner && owner.alive && owner.seat !== a.seat) occupied.add(sec.territory);
     }
     const gain = Math.min(occupied.size, s.powerCap);
-    if (gain) { a.power += gain; ev(`⚡ ${COLOR_FR[a.color]} récolte ${gain} Power`); }
+    if (gain) { a.power += gain; ev(`⚡ ${COLOR_NAME[a.color]} collects ${gain} Power`); }
   }
 
-  // 6. Flags: a side alone on an enemy HQ with at least one Soldat or Régiment takes the flag.
+  // 6. Flags: a side alone on an enemy HQ with at least one Infantry or Regiment takes the flag.
   for (const a of s.armies) if (a.alive) {
     const there = s.pieces.filter(p => p.loc === hqOf(a.color));
     const seats = new Set(there.map(p => seatOfArmy(s, p.army)));
@@ -318,19 +318,19 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
     a.flags = [];
     captor.power += a.power; a.power = 0;
     for (const p of s.pieces) if (p.army === a.color) { p.army = captor.color; p.loc = 'RV'; }
-    ev(`🚩 ${seatName(captor.seat)} (${COLOR_FR[captor.color]}) prend le drapeau ${COLOR_FR[a.color]} !`);
+    ev(`🚩 ${seatName(captor.seat)} (${COLOR_NAME[captor.color]}) captures the ${COLOR_NAME[a.color]} flag!`);
   }
 
   // Victory.
   const aliveSeats = [...new Set(s.armies.filter(a => a.alive).map(a => a.seat))];
   if (aliveSeats.length === 1) {
     s.winner = aliveSeats[0]; s.endReason = 'flags';
-    ev(`🏆 ${seatName(s.winner)} a pris tous les drapeaux !`);
+    ev(`🏆 ${seatName(s.winner)} has captured every flag!`);
   } else if (s.lastRound) {
     const rank = aliveSeats.map(i => ({ i, p: totalPower(s, i), f: s.armies.filter(a => a.seat === i).reduce((t, a) => t + a.flags.length, 0) }))
       .sort((x, y) => y.p - x.p || y.f - x.f);
     s.winner = rank[0].i; s.endReason = 'time';
-    ev(`⏰ Temps écoulé. ${seatName(s.winner)} gagne avec ${rank[0].p} de puissance totale`);
+    ev(`⏰ Time is up. ${seatName(s.winner)} wins with ${rank[0].p} total power`);
   }
   s.report = report;
   s.round++;
@@ -352,8 +352,8 @@ function penalty(s: GameState, a: Army, ev: (t: string) => void) {
       for (let i = 0; i < 2; i++) s.pieces.push({ id: s.nextId++, kind: spec.base!, army: a.color, loc: 'RV' });
       a.power += UNITS[spec.base!].power;
     } else a.power += spec.power;
-    converted = `, convertit un ${spec.name} en Power`;
+    converted = `, turns one ${spec.name} into Power`;
   }
   a.power -= 1;
-  ev(`⚠️ ${COLOR_FR[a.color]} n’a exécuté aucun ordre valable${converted} et perd 1 Power`);
+  ev(`⚠️ ${COLOR_NAME[a.color]} carried out no valid order${converted} and loses 1 Power`);
 }

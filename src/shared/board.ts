@@ -1,19 +1,19 @@
 // The board, as a graph of sectors, copied from the original layout: four
 // territories of nine sectors (0-8, sector 4 in the middle) each surrounded by
-// sea, a headquarters in each corner, the islands Nord, Sud, Est, Ouest between
-// territories along the edges and Île X in the centre, and twelve sea sectors
+// sea, a headquarters in each corner, the North, South, East and West islands
+// between territories along the edges and Island X in the centre, and twelve sea sectors
 // (an outer strip along each side of each territory, plus four channels).
 
 export type Color = 'red' | 'blue' | 'yellow' | 'green';
 export const COLORS: Color[] = ['yellow', 'green', 'red', 'blue']; // clockwise from top left
-export const LETTER: Record<Color, string> = { red: 'R', blue: 'B', yellow: 'J', green: 'V' };
-export const COLOR_FR: Record<Color, string> = { red: 'Rouge', blue: 'Bleu', yellow: 'Jaune', green: 'Vert' };
+export const LETTER: Record<Color, string> = { red: 'R', blue: 'B', yellow: 'Y', green: 'G' };
+export const COLOR_NAME: Record<Color, string> = { red: 'Red', blue: 'Blue', yellow: 'Yellow', green: 'Green' };
 
 export type SectorKind = 'land' | 'hq' | 'island' | 'sea';
 export interface Sector {
   id: number;
-  code: string;          // R4, S3, IX, QG-R …
-  name: string;          // French display name
+  code: string;          // R4, S3, IX, HQ-R …
+  name: string;          // display name
   kind: SectorKind;
   territory?: Color;     // for land and hq
   num?: number;          // territory sector number 0-8
@@ -24,12 +24,12 @@ export interface Sector {
 }
 
 // Each token is one cell of a 9×9 grid. Territory sectors are numbered from
-// the HQ corner (0) to the corner facing Île X (8).
+// the HQ corner (0) to the corner facing Island X (8).
 const MAP = `
-QJ  S1  S1  S1  IN  S2  S2  S2  QV
-S11 J0  J1  J2  S3  V2  V1  V0  S4
-S11 J3  J4  J5  S3  V5  V4  V3  S4
-S11 J6  J7  J8  S3  V8  V7  V6  S4
+QY  S1  S1  S1  IN  S2  S2  S2  QG
+S11 Y0  Y1  Y2  S3  G2  G1  G0  S4
+S11 Y3  Y4  Y5  S3  G5  G4  G3  S4
+S11 Y6  Y7  Y8  S3  G8  G7  G6  S4
 IW  S12 S12 S12 IX  S6  S6  S6  IE
 S10 B6  B7  B8  S9  R8  R7  R6  S5
 S10 B3  B4  B5  S9  R5  R4  R3  S5
@@ -48,8 +48,8 @@ export const GRID = MAP.trim().split('\n').map(r => r.trim().split(/\s+/));
 export const GW = GRID[0].length;
 export const GH = GRID.length;
 
-const BY_LETTER: Record<string, Color> = { R: 'red', B: 'blue', J: 'yellow', V: 'green' };
-const ISLANDS: Record<string, string> = { IN: 'Île Nord', IS: 'Île Sud', IE: 'Île Est', IW: 'Île Ouest', IX: 'Île X' };
+const BY_LETTER: Record<string, Color> = { R: 'red', B: 'blue', Y: 'yellow', G: 'green' };
+const ISLANDS: Record<string, string> = { IN: 'North Island', IS: 'South Island', IE: 'East Island', IW: 'West Island', IX: 'Island X' };
 
 function build(): Sector[] {
   const codes = [...new Set(GRID.flat().filter(t => t !== '--'))];
@@ -59,9 +59,9 @@ function build(): Sector[] {
     const cx = cells.reduce((s, c) => s + c[0], 0) / cells.length, cy = cells.reduce((s, c) => s + c[1], 0) / cells.length;
     const anchor = [...cells].sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy))[0];
     const base = { id, code, cells, anchor, adj: [], coastal: false };
-    if (code.startsWith('Q')) { const t = BY_LETTER[code[1]]; return { ...base, code: `QG-${code[1]}`, name: `QG ${code[1]}`, kind: 'hq', territory: t }; }
+    if (code.startsWith('Q')) { const t = BY_LETTER[code[1]]; return { ...base, code: `HQ-${code[1]}`, name: `HQ ${code[1]}`, kind: 'hq', territory: t }; }
     if (ISLANDS[code]) return { ...base, name: ISLANDS[code], kind: 'island' };
-    if (code.startsWith('S')) return { ...base, name: `Mer ${code.slice(1)}`, kind: 'sea' };
+    if (code.startsWith('S')) return { ...base, name: `Sea ${code.slice(1)}`, kind: 'sea' };
     return { ...base, name: code, kind: 'land', territory: BY_LETTER[code[0]], num: Number(code.slice(1)) };
   });
   const idOf = new Map(codes.map((c, i) => [c, i]));

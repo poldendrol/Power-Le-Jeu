@@ -1,4 +1,4 @@
-# Power, le jeu (version numérique)
+# Power (digital version)
 
 Browser version of the 1981 board game *Power*, playable with 2 to 4 friends over the internet.
 One player creates a room and shares the link; everyone writes up to 5 secret orders per turn,

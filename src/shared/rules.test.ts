@@ -20,11 +20,11 @@ assert.ok(!SECTORS[at('R4')].coastal && SECTORS[at('R8')].coastal);
 assert.ok(reachable('S', at('R5')).has(at('IX')));            // soldier: 2 steps via R8
 assert.ok(!reachable('S', at('R4')).has(at('B8')));           // cannot cross Île X in one move
 assert.ok(!reachable('T', at('R8')).has(at('S1')));           // never into the sea
-assert.deepEqual(codes(reachable('D', at('S3'))), ['IN', 'IX', 'J2', 'J5', 'J8', 'V2', 'V5', 'V8'].sort()); // 6 sectors + 2 islands, as the rules say
+assert.deepEqual(codes(reachable('D', at('S3'))), ['IN', 'IX', 'Y2', 'Y5', 'Y8', 'G2', 'G5', 'G8'].sort()); // 6 sectors + 2 islands, as the rules say
 assert.ok(!reachable('D', at('S1')).has(at('S11')));          // seas never touch directly
 assert.ok(!reachable('D', at('R8')).has(at('R4')));           // ships never enter sector 4
 assert.ok(reachable('C', hqOf('red')).has(at('B8')));         // fighter: QG → R0 → R4 → R8 → IX → B8
-assert.ok(reachable('T', at('IX')).has(at('J6')));            // leaving an island next round is fine
+assert.ok(reachable('T', at('IX')).has(at('Y6')));            // leaving an island next round is fine
 
 // Bigger side captures into its reserve.
 {
@@ -80,8 +80,8 @@ assert.ok(reachable('T', at('IX')).has(at('J6')));            // leaving an isla
 // Power: 1 per occupied enemy territory.
 {
   const s = empty();
-  place(s, 'red', 'S', 'B0'); place(s, 'red', 'S', 'B1'); place(s, 'red', 'C', 'J4');
-  const n = resolveRound(s, { red: [{ type: 'move', kind: 'C', from: at('J4'), to: at('J3') }] });
+  place(s, 'red', 'S', 'B0'); place(s, 'red', 'S', 'B1'); place(s, 'red', 'C', 'Y4');
+  const n = resolveRound(s, { red: [{ type: 'move', kind: 'C', from: at('Y4'), to: at('Y3') }] });
   assert.equal(armyOf(n, 'red').power, 12);
 }
 // Penalty: no legal order costs 1 Power, or turns the smallest piece into Power.
@@ -96,7 +96,7 @@ assert.ok(reachable('T', at('IX')).has(at('J6')));            // leaving an isla
 // Flag: needs a Soldat or Régiment; the winner takes the loser's pieces and Power.
 {
   const s = empty();
-  place(s, 'red', 'C', 'B0'); place(s, 'blue', 'T', 'J0');
+  place(s, 'red', 'C', 'B0'); place(s, 'blue', 'T', 'Y0');
   armyOf(s, 'blue').power = 5;
   let n = resolveRound(s, { red: [{ type: 'move', kind: 'C', from: at('B0'), to: hqOf('blue') }] });
   assert.ok(armyOf(n, 'blue').alive);
@@ -110,9 +110,9 @@ assert.ok(reachable('T', at('IX')).has(at('J6')));            // leaving an isla
 // Two players: winning both flags wins the game.
 {
   const s = empty(2);
-  place(s, 'yellow', 'S', 'V0'); place(s, 'blue', 'S', 'R0');
+  place(s, 'yellow', 'S', 'G0'); place(s, 'blue', 'S', 'R0');
   const n = resolveRound(s, {
-    yellow: [{ type: 'move', kind: 'S', from: at('V0'), to: hqOf('green') }],
+    yellow: [{ type: 'move', kind: 'S', from: at('G0'), to: hqOf('green') }],
     blue: [{ type: 'move', kind: 'S', from: at('R0'), to: hqOf('red') }],
   });
   assert.equal(n.winner, 0);

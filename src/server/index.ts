@@ -48,9 +48,9 @@ wss.on('connection', ws => {
       seat = room.seats.find(s => s.token === msg.token) ?? null;
       if (!seat) {
         if (room.game || room.seats.length >= 4) {
-          send({ t: 'error', message: room.game ? 'La partie a déjà commencé : tu peux la regarder.' : 'La salle est pleine (4 joueurs).' });
+          send({ t: 'error', message: room.game ? 'This game has already started: you can watch it.' : 'This game is full (4 players).' });
         } else {
-          seat = { name: String(msg.name).slice(0, 20) || 'Joueur', token: String(msg.token), socket: null, draft: null, submitted: false, pauseUsed: false };
+          seat = { name: String(msg.name).slice(0, 20) || 'Player', token: String(msg.token), socket: null, draft: null, submitted: false, pauseUsed: false };
           room.seats.push(seat);
         }
       }
@@ -68,7 +68,7 @@ wss.on('connection', ws => {
       r.options = { timerMin, limitMin };
     } else if (msg.t === 'start') {
       if (r.game || idx !== 0) return;
-      if (r.seats.length < 2) return send({ t: 'error', message: 'Il faut au moins 2 joueurs' });
+      if (r.seats.length < 2) return send({ t: 'error', message: 'At least 2 players are needed' });
       r.game = newGame(r.seats.map(s => s.name));
       r.gameEndsAt = r.options.limitMin ? Date.now() + r.options.limitMin * 60_000 : null;
       startRound(r);
@@ -149,4 +149,4 @@ setInterval(() => {
   }
 }, 3_600_000);
 
-server.listen(PORT, () => console.log(`Power, le jeu on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`Power on http://localhost:${PORT}`));
