@@ -59,7 +59,10 @@ export interface Piece { id: number; kind: Kind; army: Color; loc: Loc }
 export interface Army { color: Color; seat: number; alive: boolean; power: number; flags: Color[] }
 export interface Seat { name: string; armies: Color[] }
 export interface OrderResult { order: Order; ok: boolean; note?: string }
-export interface Report { round: number; orders: { army: Color; results: OrderResult[] }[]; events: string[] }
+export interface Report {
+  round: number; orders: { army: Color; results: OrderResult[] }[]; events: string[];
+  battles: number[]; blasts: number[]; // sectors, for the replay animation
+}
 export interface GameState {
   round: number;
   arbiter: number;         // seat that executes first this round
@@ -222,7 +225,7 @@ export function pickMissile(s: GameState, army: Color, at: Loc): { use: Partial<
 export function resolveRound(prev: GameState, orders: Partial<Record<Color, Order[]>>): GameState {
   const s: GameState = structuredClone(prev);
   const ctx = newCtx();
-  const report: Report = { round: s.round, orders: [], events: [] };
+  const report: Report = { round: s.round, orders: [], events: [], battles: [], blasts: [] };
   const ev = (t: string) => report.events.push(t);
   const seatName = (i: number) => s.seats[i].name;
 
@@ -248,6 +251,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
     const hit = l.target === 'RV' ? s.pieces.filter(p => p.army === l.reserveOf && p.loc === 'RV') : s.pieces.filter(p => p.loc === l.target);
     const gone = new Set(hit.map(p => p.id));
     s.pieces = s.pieces.filter(p => !gone.has(p.id));
+    if (l.target !== 'RV') report.blasts.push(l.target);
     ev(`💥 ${COLOR_NAME[l.army]} launches a megamissile at ${l.target === 'RV' ? `Reserve ${LETTER[l.reserveOf!]}` : locName(l.target)}: ${hit.length} piece(s) destroyed`);
   }
 
@@ -272,6 +276,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
       const back = ps.filter(p => tied.has(seatOfArmy(s, p.army)) && ctx.moved.has(p.id) && ctx.prev.has(p.id) && !rebounded.has(p.id));
       if (!back.length) continue;
       for (const p of back) { p.loc = ctx.prev.get(p.id)!; rebounded.add(p.id); }
+      report.battles.push(loc);
       ev(`↩️ ${locName(loc)}: tie (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}), arriving pieces bounce back`);
       bounced = true;
     }
@@ -288,6 +293,7 @@ export function resolveRound(prev: GameState, orders: Partial<Record<Color, Orde
     const to = byArmy[0].c;
     const lost = ps.filter(p => seatOfArmy(s, p.army) !== win);
     for (const p of lost) { p.army = to; p.loc = 'RV'; }
+    report.battles.push(loc);
     ev(`⚔️ ${locName(loc)}: ${seatName(win)} wins (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}) and captures ${lost.length} piece(s)`);
   }
 

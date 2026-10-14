@@ -37,7 +37,10 @@ function connect(name: string) {
   ws.onmessage = e => {
     const m: ServerMsg = JSON.parse(e.data);
     if (m.t === 'room') {
+      const before = room?.game;
       room = m.room;
+      const after = room.game;
+      if (before && after?.report && after.round === before.round + 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches) startReplay(before, after);
       clockSkew = room.now - Date.now();
       const g = room.game;
       if (g && g.round !== plannedRound) {
@@ -59,7 +62,7 @@ function render() {
   if (!roomId()) return renderHome();
   if (!room) { app.innerHTML = `<div class="splash"><div class="spinner"></div><p class="muted">Connecting…</p></div>`; return; }
   if (!room.game) return renderLobby(room);
-  renderGame(room, room.game);
+  renderGame(room, replay ? replay.prev : room.game);
 }
 
 const hero = (inner: string) => `
@@ -159,13 +162,33 @@ function pieceToken(k: Kind, color: Color, n: number, x: number, y: number, extr
   </g>`;
 }
 
+// Replay of the round that just resolved: pieces fly to their targets, then battles flash.
+let replay: { prev: GameState; next: GameState; timer: number; start: number } | null = null;
+const MOVE_MS = 900;
+function replayMoves(rp: { next: GameState }) {
+  return rp.next.report!.orders.flatMap(o => o.results.filter(x => x.ok && x.order.type === 'move').map(x => ({ army: o.army, ...(x.order as Extract<Order, { type: 'move' }>) })));
+}
+function replayTiming(n: number) { const stagger = n ? Math.min(110, 1600 / n) : 0; return { stagger, movesEnd: n * stagger + MOVE_MS }; }
+function startReplay(prev: GameState, next: GameState) {
+  if (replay) clearTimeout(replay.timer);
+  const { movesEnd } = replayTiming(replayMoves({ next }).length);
+  const fx = next.report!.battles.length + next.report!.blasts.length;
+  replay = { prev, next, start: performance.now(), timer: window.setTimeout(endReplay, movesEnd + (fx ? 1100 : 200)) };
+}
+function endReplay() { if (replay) clearTimeout(replay.timer); replay = null; render(); }
+
 function renderGame(r: RoomView, g: GameState) {
   const me = r.you;
   const myArmies = me !== null ? g.seats[me].armies : [];
   const submitted = me !== null && r.seats[me].submitted;
   const over = g.winner !== undefined;
-  const canPlan = !!army && !submitted && !over && armyOf(g, army).alive;
-  const { s: proj, ctx, errors } = project(g);
+  const canPlan = !replay && !!army && !submitted && !over && armyOf(g, army).alive;
+  const { s: proj, ctx, errors } = replay ? { s: structuredClone(g), ctx: newCtx(), errors: new Map<Order, string>() } : project(g);
+  const movers = replay ? replayMoves(replay) : [];
+  for (const mv of movers) {
+    const i = proj.pieces.findIndex(p => p.army === mv.army && p.kind === mv.kind && p.loc === mv.from);
+    if (i >= 0) proj.pieces.splice(i, 1);
+  }
   const list = army ? orders[army] ?? [] : [];
 
   const center = (id: number) => { const b = bbox(SECTORS[id]); return [b.x + b.w / 2, b.y + b.h / 2]; };
@@ -217,7 +240,10 @@ function renderGame(r: RoomView, g: GameState) {
     }).join('');
   }).join('');
   const hits = SECTORS.map(sec => `<path d="${sectorPath(sec)}" data-sec="${sec.id}" class="hit ${targets.has(sec.id) ? 'target' : ''} ${sources.has(sec.id) ? 'src' : ''} ${sel === sec.id ? 'sel' : ''}"/>`).join('');
-  const arrows = list.map(o => {
+  const fxLayer = replay ? `<g class="fx">${movers.map((mv, i) => `<g class="mover" data-i="${i}">${pieceToken(mv.kind, mv.army, 1, 0, 0)}</g>`).join('')}
+    ${replay.next.report!.battles.map(id => { const [x, y] = center(id); return `<g transform="translate(${x},${y})"><circle r="26" class="clash"/><text class="clash-icon" y="7">⚔</text></g>`; }).join('')}
+    ${replay.next.report!.blasts.map(id => { const [x, y] = center(id); return `<g transform="translate(${x},${y})"><circle r="34" class="blast"/></g>`; }).join('')}</g>` : '';
+  const arrows = replay ? '' : list.map(o => {
     if (o.type === 'move' && typeof o.to === 'number') {
       const [tx, ty] = center(o.to);
       const [fx, fy] = o.from === 'RV' ? [tx, ty - 50] : center(o.from);
@@ -247,6 +273,7 @@ function renderGame(r: RoomView, g: GameState) {
   const topbar = `<header class="topbar">
     <div class="brand">POWER</div>
     <div class="round"><span class="muted small">ROUND</span><b>${g.round}</b></div>
+    ${replay ? `<button class="pill play" id="skip">▶ Round ${g.round} in action · skip</button>` : ''}
     ${deadline && !over ? `<div class="timer" id="timer"></div>` : ''}
     ${g.lastRound && !over ? '<div class="pill warn">Last round</div>' : ''}
     <div class="pchips">${playerChips}</div>
@@ -315,11 +342,32 @@ function renderGame(r: RoomView, g: GameState) {
     <div class="game">
       ${topbar}
       <main class="field-area">
-        <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${tokens}${arrows}${hits}</svg>
+        <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${tokens}${arrows}${fxLayer}${hits}</svg>
           <div class="tooltip" id="tip" hidden></div></div>
         <aside class="side">${error ? `<div class="toast">${esc(error)}</div>` : ''}${forces}${command}${report}</aside>
       </main>
     </div>`;
+
+  if (replay) {
+    const { stagger } = replayTiming(movers.length);
+    const elapsed = performance.now() - replay.start; // re-renders mid-replay continue where they were
+    app.querySelectorAll<SVGGElement>('.mover').forEach(el => {
+      const mv = movers[Number(el.dataset.i)];
+      const [tx, ty] = center(mv.to);
+      const [fx, fy] = mv.from === 'RV' ? [tx, ty - 60] : center(mv.from);
+      el.animate([{ transform: `translate(${fx}px,${fy}px) scale(1)` }, { transform: `translate(${(fx + tx) / 2}px,${(fy + ty) / 2}px) scale(1.35)`, offset: .5 }, { transform: `translate(${tx}px,${ty}px) scale(1)` }],
+        { duration: MOVE_MS, delay: Number(el.dataset.i) * stagger - elapsed, easing: 'ease-in-out', fill: 'both' });
+    });
+    const end = replayTiming(movers.length).movesEnd;
+    app.querySelectorAll<SVGElement>('.clash, .clash-icon').forEach(el => el.animate(
+      [{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1.15)', offset: .4 }, { opacity: 0, transform: 'scale(1.4)' }],
+      { duration: 1000, delay: end - elapsed, fill: 'both' }));
+    app.querySelectorAll<SVGElement>('.blast').forEach(el => el.animate(
+      [{ opacity: 0, transform: 'scale(.2)' }, { opacity: 1, transform: 'scale(1)', offset: .3 }, { opacity: 0, transform: 'scale(1.6)' }],
+      { duration: 1000, delay: end - elapsed, fill: 'both' }));
+    const skip = $('#skip'); if (skip) skip.onclick = endReplay;
+    app.querySelector('.board')?.addEventListener('click', endReplay);
+  }
 
   // ----- Events -----
   const tip = $('#tip')!;
