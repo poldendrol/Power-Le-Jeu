@@ -1,4 +1,5 @@
-import { BOARD_SIZE, COL_W, COL_X, GH, GRID, GW, ROW_H, ROW_Y, sectorAt } from '../shared/board';
+import { BOARD_SIZE } from '../shared/board';
+import { ARMY_HEX, ICON, bbox, boardArt, iconSvg, sectorPath } from './art';
 import {
   BASE_KINDS, COLOR_NAME, LETTER, MISSILE_COST, SECTORS, UNITS, armyOf, describeOrder, executeOrder, hqOf, locName,
   newCtx, pickMissile, reachable, totalPower, value,
@@ -56,29 +57,33 @@ function connect(name: string) {
 // ---------- Screens ----------
 function render() {
   if (!roomId()) return renderHome();
-  if (!room) { app.innerHTML = `<p class="muted center">Connecting…</p>`; return; }
+  if (!room) { app.innerHTML = `<div class="splash"><div class="spinner"></div><p class="muted">Connecting…</p></div>`; return; }
   if (!room.game) return renderLobby(room);
   renderGame(room, room.game);
 }
 
+const hero = (inner: string) => `
+  <div class="hero">
+    <svg class="hero-art" viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" preserveAspectRatio="xMidYMid slice">${ART}</svg>
+    <div class="hero-card">
+      <div class="logo">POWER</div>
+      <p class="tagline">Secret orders. Simultaneous strikes. One flag to rule them all.</p>
+      ${inner}
+    </div>
+  </div>`;
+
 function renderHome() {
-  app.innerHTML = `
-    <div class="card narrow">
-      <h1>Power</h1>
-      <p class="muted">Create a game and send the link to your friends, or add computer players (2 to 4 players in all).</p>
-      <button id="create">Create a game</button>
-    </div>`;
+  app.innerHTML = hero(`
+    <button id="create" class="primary big">Create a game</button>
+    <p class="muted small">Invite up to 3 friends with a link, or fill the table with computer players.</p>`);
   $('#create')!.onclick = () => { location.hash = Math.random().toString(36).slice(2, 8); };
 }
 
 function askNameAndJoin() {
   const saved = store('power.name', () => '');
-  app.innerHTML = `
-    <div class="card narrow">
-      <h1>Power</h1>
-      <label>Your name <input id="name" maxlength="20" value="${esc(saved)}" autofocus></label>
-      <button id="join">Join the game</button>
-    </div>`;
+  app.innerHTML = hero(`
+    <label class="field"><span>Your commander name</span><input id="name" maxlength="20" value="${esc(saved)}" autofocus></label>
+    <button id="join" class="primary big">Join the game</button>`);
   const go = () => {
     const name = ($('#name') as HTMLInputElement).value.trim() || 'Player';
     try { localStorage.setItem('power.name', name); } catch { /* private mode */ }
@@ -91,25 +96,34 @@ function askNameAndJoin() {
 function renderLobby(r: RoomView) {
   const host = r.you === 0;
   const n = r.seats.length;
-  const variant = n === 2 ? '2 players: each player commands two neighbouring armies (10 orders per round).'
-    : n === 3 ? '3 players: the Blue territory stays empty.' : n === 4 ? '4 players: one army each.' : '';
+  const variant = n === 2 ? 'Two players: each commands two neighbouring armies, 10 orders per round.'
+    : n === 3 ? 'Three players: the Blue territory stays empty.' : n === 4 ? 'Four players: one army each.' : 'Waiting for at least one more player.';
+  const colors: Color[][] = n === 2 ? [['yellow', 'blue'], ['green', 'red']] : [['yellow'], ['green'], ['red'], ['blue']];
   const opt = (id: string, cur: number, vals: [number, string][]) =>
     `<select id="${id}" ${host ? '' : 'disabled'}>${vals.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  app.innerHTML = `
-    <div class="card narrow">
-      <h1>Game ${esc(r.id)}</h1>
-      <p>Send this link to your friends:</p>
-      <div class="row"><input readonly value="${esc(location.href)}"><button id="copy" class="secondary">Copy</button></div>
-      <ul class="seats">${r.seats.map((s, i) => `<li>${s.bot ? '🤖 ' : ''}${esc(s.name)}${i === r.you ? ' (you)' : ''}${i === 0 ? ' · host' : ''}${s.connected ? '' : ' <span class="muted">· disconnected</span>'}${s.bot && host ? ` <button class="mini secondary" data-rmbot="${i}">Remove</button>` : ''}</li>`).join('')}</ul>
-      ${host && n < 4 ? '<button id="addbot" class="secondary">🤖 Add a computer player</button>' : ''}
-      <p class="muted">${variant}</p>
-      <label>Time to write orders ${opt('timer', r.options.timerMin, [[0, 'Unlimited'], [1, '1 min'], [2, '2 min'], [3, '3 min (rules)'], [5, '5 min'], [10, '10 min']])}</label>
-      <label>Game length ${opt('limit', r.options.limitMin, [[0, 'Until the last flag'], [60, '1 h'], [90, '1 h 30'], [120, '2 h (rules)'], [180, '3 h']])}</label>
-      ${r.you === null ? '<p class="error">This game is full or has already started.</p>' : ''}
-      ${host ? `<button id="start" ${n < 2 ? 'disabled' : ''}>Start the game</button>` : '<p class="muted">Waiting for the host to start the game…</p>'}
-      ${error ? `<p class="error">${esc(error)}</p>` : ''}
+  const seatCards = [0, 1, 2, 3].map(i => {
+    const s = r.seats[i];
+    if (!s) return `<div class="seat empty">${host && i === n ? '<button id="addbot" class="ghost">＋ Add computer</button>' : '<span class="muted">Open seat</span>'}</div>`;
+    return `<div class="seat">
+      <div class="seat-colors">${(colors[i] ?? []).map(c => `<span class="swatch" style="background:${ARMY_HEX[c]}"></span>`).join('')}</div>
+      <div class="seat-name">${s.bot ? '<span class="bot">AI</span>' : ''}${esc(s.name)}</div>
+      <div class="muted small">${i === 0 ? 'Host' : s.bot ? 'Computer' : s.connected ? 'Ready' : 'Disconnected'}${i === r.you ? ' · you' : ''}</div>
+      ${s.bot && host ? `<button class="link" data-rmbot="${i}">Remove</button>` : ''}
     </div>`;
-  $('#copy')!.onclick = () => navigator.clipboard?.writeText(location.href);
+  }).join('');
+  app.innerHTML = hero(`
+    <div class="lobby-head"><span class="muted small">GAME</span> <b>${esc(r.id)}</b></div>
+    <div class="share"><input readonly value="${esc(location.href)}"><button id="copy" class="ghost">Copy link</button></div>
+    <div class="seats">${seatCards}</div>
+    <p class="muted small">${variant}</p>
+    <div class="opts">
+      <label class="field"><span>Order time</span>${opt('timer', r.options.timerMin, [[0, 'Unlimited'], [1, '1 min'], [2, '2 min'], [3, '3 min (rules)'], [5, '5 min'], [10, '10 min']])}</label>
+      <label class="field"><span>Game length</span>${opt('limit', r.options.limitMin, [[0, 'Until the last flag'], [60, '1 h'], [90, '1 h 30'], [120, '2 h (rules)'], [180, '3 h']])}</label>
+    </div>
+    ${r.you === null ? '<p class="error">This game is full or has already started.</p>' : ''}
+    ${host ? `<button id="start" class="primary big" ${n < 2 ? 'disabled' : ''}>Start the game</button>` : '<p class="muted">Waiting for the host to start the game…</p>'}
+    ${error ? `<p class="error">${esc(error)}</p>` : ''}`);
+  $('#copy')!.onclick = () => { navigator.clipboard?.writeText(location.href); $('#copy')!.textContent = 'Copied!'; };
   if (host) {
     const sendOpts = () => send({ t: 'options', options: { timerMin: Number(($('#timer') as HTMLSelectElement).value), limitMin: Number(($('#limit') as HTMLSelectElement).value) } satisfies Options });
     $('#timer')!.onchange = sendOpts; $('#limit')!.onchange = sendOpts;
@@ -133,6 +147,18 @@ function safeExec(s: GameState, ctx: ReturnType<typeof newCtx>, color: Color, o:
   try { return executeOrder(s, ctx, color, o); } catch { return 'Invalid order'; }
 }
 
+const ART = boardArt();
+const KIND_ORDER: Kind[] = ['S', 'R', 'T', 'A', 'C', 'B', 'D', 'CR', 'M'];
+let focusKind: Kind | null = null; // highlight this kind of your pieces on the board
+
+function pieceToken(k: Kind, color: Color, n: number, x: number, y: number, extra = '') {
+  return `<g class="token ${extra}" transform="translate(${x},${y})">
+    <circle r="11.5" fill="${ARMY_HEX[color]}" class="token-bg"/>
+    <path d="${ICON[k]}" transform="translate(-7.2,-7.2) scale(.6)" fill="#fff"/>
+    ${n > 1 ? `<g transform="translate(9,-8)"><circle r="6.5" class="badge"/><text class="badge-text" y="3">${n}</text></g>` : ''}
+  </g>`;
+}
+
 function renderGame(r: RoomView, g: GameState) {
   const me = r.you;
   const myArmies = me !== null ? g.seats[me].armies : [];
@@ -142,116 +168,174 @@ function renderGame(r: RoomView, g: GameState) {
   const { s: proj, ctx, errors } = project(g);
   const list = army ? orders[army] ?? [] : [];
 
-  // Target squares for the current mode.
+  // Target sectors for the current mode.
   let targets = new Set<number>();
   if (mode?.t === 'move') targets = mode.from === 'RV' ? new Set([hqOf(army!)]) : reachable(mode.kind, mode.from);
   else if (mode?.t === 'launch') targets = new Set(SECTORS.map(x => x.id));
 
   // ----- Board -----
-  const S = 72;
-  const X = (x: number) => COL_X[x] ?? BOARD_SIZE, Y = (y: number) => ROW_Y[y] ?? BOARD_SIZE;
-  const cells: string[] = [];
-  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-    const sec = sectorAt(x, y);
-    if (!sec) continue;
-    const cls = ['cell', sec.kind, sec.territory ? `t-${sec.territory}` : '', targets.has(sec.id) ? 'target' : '', sel === sec.id ? 'sel' : ''].join(' ');
-    cells.push(`<rect x="${X(x)}" y="${Y(y)}" width="${COL_W[x]}" height="${ROW_H[y]}" class="${cls}" data-sec="${sec.id}"/>`);
-  }
-  // Thick borders between different sectors.
-  const borders: string[] = [];
-  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-    const t = GRID[y][x];
-    if (t === '--') continue;
-    if (GRID[y][x + 1] !== t) borders.push(`M${X(x + 1)},${Y(y)}v${ROW_H[y]}`);
-    if (GRID[y + 1]?.[x] !== t) borders.push(`M${X(x)},${Y(y + 1)}h${COL_W[x]}`);
-    if (x === 0 || GRID[y][x - 1] === '--') borders.push(`M${X(x)},${Y(y)}v${ROW_H[y]}`);
-    if (y === 0 || GRID[y - 1]?.[x] === '--') borders.push(`M${X(x)},${Y(y)}h${COL_W[x]}`);
-  }
+  const center = (id: number) => { const b = bbox(SECTORS[id]); return [b.x + b.w / 2, b.y + b.h / 2]; };
   const labels = SECTORS.map(sec => {
-    const [x, y] = sec.anchor;
-    const hqFlag = sec.kind === 'hq' ? ` ${flagsAt(g, sec.territory!)}` : '';
-    return `<text x="${X(x) + 3}" y="${Y(y) + 11}" class="code">${sec.code}${hqFlag}</text>`;
+    const b = bbox(sec);
+    const txt = sec.kind === 'hq' ? `HQ ${'⚑'.repeat(armyOf(g, sec.territory!)?.alive ? armyOf(g, sec.territory!).flags.length : 0)}` : sec.code;
+    return `<text x="${b.x + 5}" y="${b.y + 12}" class="code ${sec.kind}">${txt}</text>`;
   }).join('');
-  const chips = SECTORS.map(sec => {
+  const tokens = SECTORS.map(sec => {
     const here = proj.pieces.filter(p => p.loc === sec.id);
-    const armies = [...new Set(here.map(p => p.army))];
-    const [x, y] = sec.anchor;
-    return armies.map((c, i) => {
-      const ps = here.filter(p => p.army === c);
-      const txt = kindsSummary(ps.map(p => p.kind));
-      const movedIn = ps.some(p => ctx.moved.has(p.id) && ctx.prev.get(p.id) !== sec.id);
-      return `<g transform="translate(${X(x) + 2},${Y(y) + 14 + i * 14})" class="${movedIn ? 'planned' : ''}">
-        <rect width="${COL_W[x] - 4}" height="13" rx="3" class="chip ${c}"/><text x="3" y="10" class="chip-text">${txt}</text></g>`;
+    if (!here.length) return '';
+    const b = bbox(sec);
+    const items: { k: Kind; c: Color; n: number; cls: string }[] = [];
+    for (const c of [...new Set(here.map(p => p.army))]) for (const k of KIND_ORDER) {
+      const ps = here.filter(p => p.army === c && p.kind === k);
+      if (!ps.length) continue;
+      const planned = ps.some(p => ctx.moved.has(p.id) && ctx.prev.get(p.id) !== sec.id);
+      const focus = focusKind === k && c === army;
+      items.push({ k, c, n: ps.length, cls: `${planned ? 'planned' : ''} ${focus ? 'focus' : ''}` });
+    }
+    const per = Math.max(1, Math.floor((b.w - 8) / 26));
+    const rows = Math.ceil(items.length / per);
+    const top = b.y + Math.max(26, (b.h - rows * 26) / 2 + 13);
+    return items.map((it, i) => {
+      const row = Math.floor(i / per), inRow = Math.min(per, items.length - row * per);
+      const x = b.x + b.w / 2 + ((i % per) - (inRow - 1) / 2) * 26;
+      return pieceToken(it.k, it.c, it.n, x, top + row * 26, it.cls);
     }).join('');
   }).join('');
+  const hits = SECTORS.map(sec => `<path d="${sectorPath(sec)}" data-sec="${sec.id}" class="hit ${targets.has(sec.id) ? 'target' : ''} ${sel === sec.id ? 'sel' : ''}"/>`).join('');
   const arrows = list.map(o => {
-    const c = (id: number) => { const [x, y] = SECTORS[id].anchor; return [X(x) + COL_W[x] / 2, Y(y) + ROW_H[y] / 2]; };
     if (o.type === 'move' && typeof o.to === 'number') {
-      const to = c(o.to);
-      const from = o.from === 'RV' ? [to[0], to[1] - S * 0.8] : c(o.from);
-      return `<line x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" class="arrow ${errors.has(o) ? 'bad' : ''}" marker-end="url(#head)"/>`;
+      const [tx, ty] = center(o.to);
+      const [fx, fy] = o.from === 'RV' ? [tx, ty - 50] : center(o.from);
+      const mx = (fx + tx) / 2 - (ty - fy) * 0.15, my = (fy + ty) / 2 + (tx - fx) * 0.15;
+      return `<path d="M${fx},${fy} Q${mx},${my} ${tx},${ty}" class="arrow ${errors.has(o) ? 'bad' : ''}" marker-end="url(#head)"/>`;
     }
-    if (o.type === 'launch' && o.target !== 'RV') { const t = c(o.target); return `<circle cx="${t[0]}" cy="${t[1]}" r="${S / 2 - 10}" class="boom"/>`; }
+    if (o.type === 'launch' && o.target !== 'RV') { const [x, y] = center(o.target); return `<circle cx="${x}" cy="${y}" r="24" class="boom"/>`; }
     return '';
   }).join('');
 
-  // ----- Panel -----
+  // ----- Top bar -----
+  const maxStrength = Math.max(1, ...g.seats.map((_, i) => totalPower(g, i)));
+  const playerChips = g.seats.map((seat, i) => {
+    const dead = seat.armies.every(c => !armyOf(g, c).alive);
+    const strength = totalPower(g, i);
+    const flags = seat.armies.reduce((t, c) => t + armyOf(g, c).flags.length, 0);
+    const status = over ? '' : dead ? 'out' : r.seats[i]?.submitted ? 'ready' : 'writing';
+    return `<div class="pchip ${dead ? 'dead' : ''} ${i === me ? 'me' : ''}">
+      <div class="pchip-colors">${seat.armies.map(c => `<span class="swatch" style="background:${ARMY_HEX[c]}"></span>`).join('')}</div>
+      <div class="pchip-body">
+        <div class="pchip-name">${r.seats[i]?.bot ? '<span class="bot">AI</span>' : ''}${esc(seat.name)}${i === me ? ' <span class="muted">(you)</span>' : ''}</div>
+        <div class="bar"><span style="width:${(strength / maxStrength) * 100}%;background:${ARMY_HEX[seat.armies[0]]}"></span></div>
+        <div class="pchip-stats"><span title="Total strength">⚔ ${strength}</span><span title="Flags">⚑ ${flags}</span>${status ? `<span class="status ${status}">${status === 'ready' ? 'Ready' : status === 'writing' ? 'Writing…' : 'Out'}</span>` : ''}</div>
+      </div></div>`;
+  }).join('');
   const deadline = r.deadline ? r.deadline - clockSkew : null;
-  const head = `
-    <div class="row between"><h2>Round ${g.round}</h2>${deadline && !over ? `<span class="timer" id="timer"></span>` : ''}</div>
-    ${g.lastRound && !over ? '<p class="banner">Last round!</p>' : ''}
-    <ul class="players">${g.seats.map((seat, i) => `
-      <li class="${seat.armies.every(c => !armyOf(g, c).alive) ? 'dead' : ''}">
-        ${r.seats[i]?.bot ? '🤖 ' : ''}<b>${esc(seat.name)}</b>${i === me ? ' (you)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
-        <span class="muted">· power ${totalPower(g, i)}</span>
-        ${seat.armies.map(c => { const a = armyOf(g, c); return `<div class="army"><span class="dot ${c}"></span>${COLOR_NAME[c]} ${a.alive ? '' : '☠️'} <span class="muted">Power ${a.power} · 🚩${a.flags.length} · reserve ${kindsSummary(g.pieces.filter(p => p.army === c && p.loc === 'RV').map(p => p.kind)) || '—'}</span></div>`; }).join('')}
-      </li>`).join('')}
-    </ul>`;
+  const topbar = `<header class="topbar">
+    <div class="brand">POWER</div>
+    <div class="round"><span class="muted small">ROUND</span><b>${g.round}</b></div>
+    ${deadline && !over ? `<div class="timer" id="timer"></div>` : ''}
+    ${g.lastRound && !over ? '<div class="pill warn">Last round</div>' : ''}
+    <div class="pchips">${playerChips}</div>
+  </header>`;
 
-  let action = '';
-  if (over) action = `<p class="banner">🏆 ${esc(g.seats[g.winner!].name)} wins the game!</p>`;
-  else if (me === null) action = `<p class="muted">You are watching this game.</p>`;
-  else if (!myArmies.some(c => armyOf(g, c).alive)) action = `<p class="muted">Your flags have fallen. You can watch the rest of the game.</p>`;
-  else if (submitted) action = `<p>Orders sent. Waiting for the others…</p><button id="edit" class="secondary">Edit my orders</button>`;
-  else {
-    const tabs = myArmies.length > 1 ? `<div class="tabs">${myArmies.filter(c => armyOf(g, c).alive).map(c =>
-      `<button class="tab ${c === army ? 'on' : ''}" data-army="${c}"><span class="dot ${c}"></span>${COLOR_NAME[c]} (${(orders[c] ?? []).length}/${g.ordersPerArmy})</button>`).join('')}</div>` : '';
-    action = `${tabs}
-      ${mode ? `<div class="box">${mode.t === 'move' ? `Click where to send the ${UNITS[mode.kind].name}.` : `Click the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="mini" data-reserve="${a.color}">Reserve ${LETTER[a.color]}</button>`).join(' ')}`} <button id="cancel" class="secondary mini">Cancel</button></div>` : ''}
-      ${!mode && sel !== null ? locPanel(proj, ctx, sel) : ''}
-      ${!mode && sel === null ? `<p class="muted">Click a sector with your pieces, or your reserve below. Up to ${g.ordersPerArmy} orders per army.</p>` : ''}
-      <button class="secondary wide" id="reserve">${COLOR_NAME[army!]} reserve · Power ${armyOf(proj, army!).power}</button>
-      <h3>${COLOR_NAME[army!]} orders (${list.length}/${g.ordersPerArmy})</h3>
-      <ol class="orders">${list.map((o, i) => `<li class="${errors.has(o) ? 'bad' : ''}">${esc(describeOrder(o, army!))}${errors.has(o) ? ` <span class="muted">(${esc(errors.get(o)!)})</span>` : ''} <button class="mini secondary" data-del="${i}">✕</button></li>`).join('') || '<li class="muted">No orders</li>'}</ol>
-      <div class="row"><button id="submit">Send my orders</button>${r.deadline && !r.seats[me].pauseUsed ? '<button id="pause" class="secondary">Pause (+3 min)</button>' : ''}</div>`;
+  // ----- Forces card: what you have, at a glance -----
+  let forces = '';
+  if (army) {
+    const a = armyOf(proj, army);
+    const mine = g.pieces.filter(p => p.army === army);
+    const held = new Set(mine.filter(p => p.loc !== 'RV' && SECTORS[p.loc].kind === 'land' && SECTORS[p.loc].territory !== army).map(p => SECTORS[p.loc as number].territory));
+    const tabs = myArmies.length > 1 ? `<div class="tabs">${myArmies.map(c =>
+      `<button class="tab ${c === army ? 'on' : ''}" data-army="${c}" ${armyOf(g, c).alive ? '' : 'disabled'}><span class="swatch" style="background:${ARMY_HEX[c]}"></span>${COLOR_NAME[c]} <span class="muted">${(orders[c] ?? []).length}/${g.ordersPerArmy}</span></button>`).join('')}</div>` : '';
+    const roster = KIND_ORDER.map(k => {
+      const onBoard = mine.filter(p => p.kind === k && p.loc !== 'RV').length, inRes = mine.filter(p => p.kind === k && p.loc === 'RV').length;
+      return `<button class="unit ${onBoard + inRes ? '' : 'none'} ${focusKind === k ? 'on' : ''}" data-focus="${k}" title="${UNITS[k].name}: power ${UNITS[k].power}${UNITS[k].move ? `, moves ${UNITS[k].move}` : ''}">
+        <span class="unit-icon" style="background:${ARMY_HEX[army!]}">${iconSvg(k, 17, '#fff')}</span>
+        <span class="unit-text"><span class="unit-name">${UNITS[k].name}</span><span class="unit-count"><b>${onBoard}</b>${inRes ? `<i>+${inRes} in reserve</i>` : ''}</span></span>
+      </button>`;
+    }).join('');
+    forces = `<section class="card">
+      ${tabs}
+      <div class="card-head"><span class="swatch lg" style="background:${ARMY_HEX[army]}"></span><h2>${COLOR_NAME[army]} army</h2>${armyOf(g, army).alive ? '' : '<span class="pill">Defeated</span>'}</div>
+      <div class="stats">
+        <div class="stat"><b>${value(mine)}</b><span>Strength</span></div>
+        <div class="stat"><b>${a.power}</b><span>Power ⚡</span></div>
+        <div class="stat"><b>${armyOf(g, army).flags.length}</b><span>Flags ⚑</span></div>
+        <div class="stat"><b>${held.size}</b><span>Territories</span></div>
+      </div>
+      <div class="roster">${roster}</div>
+    </section>`;
   }
 
-  const report = g.report ? `
-    <h3>Round ${g.report.round}</h3>
+  // ----- Command card -----
+  let command = '';
+  if (over) command = `<section class="card win"><div class="trophy">🏆</div><h2>${esc(g.seats[g.winner!].name)} wins!</h2><p class="muted">${g.endReason === 'time' ? 'Most total strength when time ran out.' : 'Every flag captured.'}</p></section>`;
+  else if (me === null) command = `<section class="card"><p class="muted">You are watching this game.</p></section>`;
+  else if (!myArmies.some(c => armyOf(g, c).alive)) command = `<section class="card"><p class="muted">Your flags have fallen. You can watch the rest of the game.</p></section>`;
+  else if (submitted) command = `<section class="card"><h3>Orders sent</h3><p class="muted">Waiting for the other commanders…</p><button id="edit" class="ghost">Edit my orders</button></section>`;
+  else {
+    const slots = Array.from({ length: g.ordersPerArmy }, (_, i) => {
+      const o = list[i];
+      if (!o) return `<li class="slot empty"><span class="num">${i + 1}</span><span class="muted">Empty order</span></li>`;
+      return `<li class="slot ${errors.has(o) ? 'bad' : ''}"><span class="num">${i + 1}</span><span>${esc(describeOrder(o, army!))}${errors.has(o) ? `<em>${esc(errors.get(o)!)}</em>` : ''}</span><button class="x" data-del="${i}" title="Remove">✕</button></li>`;
+    }).join('');
+    const hint = mode
+      ? `<div class="hint active">${mode.t === 'move' ? `Pick a <b>gold</b> sector to send the ${UNITS[mode.kind].name}.` : `Pick the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="chipbtn" data-reserve="${a.color}"><span class="swatch" style="background:${ARMY_HEX[a.color]}"></span>${COLOR_NAME[a.color]}</button>`).join(' ')}`} <button id="cancel" class="link">Cancel</button></div>`
+      : sel !== null ? locPanel(proj, ctx, sel)
+      : `<div class="hint">Click one of your sectors on the map, or open your reserve.</div>`;
+    command = `<section class="card">
+      <div class="card-head"><h3>Orders</h3><span class="muted small">${list.length} / ${g.ordersPerArmy}</span>
+        <button class="ghost sm" id="reserve">Reserve · ⚡${armyOf(proj, army!).power}</button></div>
+      ${hint}
+      <ol class="slots">${slots}</ol>
+      <div class="actions"><button id="submit" class="primary">Send orders</button>${r.deadline && !r.seats[me].pauseUsed ? '<button id="pause" class="ghost">Pause +3 min</button>' : ''}</div>
+    </section>`;
+  }
+
+  const report = g.report ? `<section class="card">
+    <h3>Round ${g.report.round} report</h3>
     <ul class="log">${g.report.events.map(e => `<li>${esc(e)}</li>`).join('') || '<li class="muted">No battles.</li>'}</ul>
-    <details><summary>Order sheets</summary>${g.report.orders.map(o => `<p><span class="dot ${o.army}"></span><b>${COLOR_NAME[o.army]}</b></p><ol class="orders">${o.results.map(x => `<li class="${x.ok ? '' : 'bad'}">${esc(describeOrder(x.order, o.army))}${x.ok ? '' : ` <span class="muted">(${esc(x.note ?? '')})</span>`}</li>`).join('') || '<li class="muted">No orders</li>'}</ol>`).join('')}</details>` : '';
+    <details><summary>Order sheets</summary>${g.report.orders.map(o => `<div class="sheet"><div><span class="swatch" style="background:${ARMY_HEX[o.army]}"></span><b>${COLOR_NAME[o.army]}</b></div><ol>${o.results.map(x => `<li class="${x.ok ? '' : 'bad'}">${esc(describeOrder(x.order, o.army))}${x.ok ? '' : ` <em>${esc(x.note ?? '')}</em>`}</li>`).join('') || '<li class="muted">No orders</li>'}</ol></div>`).join('')}</details>
+  </section>` : '';
 
   app.innerHTML = `
     <div class="game">
-      <div class="board-wrap"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">
-        <defs><marker id="head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" class="arrowhead"/></marker></defs>
-        ${cells.join('')}<path d="${borders.join('')}" class="borders"/>${labels}${chips}${arrows}</svg></div>
-      <aside class="panel">${head}${action}${error ? `<p class="error">${esc(error)}</p>` : ''}${report}</aside>
+      ${topbar}
+      <main class="field-area">
+        <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${tokens}${arrows}${hits}</svg>
+          <div class="tooltip" id="tip" hidden></div></div>
+        <aside class="side">${error ? `<div class="toast">${esc(error)}</div>` : ''}${forces}${command}${report}</aside>
+      </main>
     </div>`;
 
   // ----- Events -----
-  app.querySelectorAll<SVGRectElement>('[data-sec]').forEach(el => el.addEventListener('click', () => {
-    if (!canPlan) return;
+  const tip = $('#tip')!;
+  app.querySelectorAll<SVGPathElement>('[data-sec]').forEach(el => {
     const id = Number(el.dataset.sec);
-    if (mode && targets.has(id)) {
-      if (mode.t === 'move') add({ type: 'move', kind: mode.kind, from: mode.from, to: id });
-      else add({ type: 'launch', from: mode.from, target: id });
-      return;
-    }
-    mode = null;
-    sel = proj.pieces.some(p => p.army === army && p.loc === id) ? id : null;
-    render();
-  }));
+    el.addEventListener('mouseenter', () => {
+      const here = proj.pieces.filter(p => p.loc === id);
+      const sec = SECTORS[id];
+      const byArmy = [...new Set(here.map(p => p.army))].map(c => `<div class="tip-row"><span class="swatch" style="background:${ARMY_HEX[c]}"></span>${here.filter(p => p.army === c).length} pieces · ⚔ ${value(here.filter(p => p.army === c))}<div class="tip-units">${KIND_ORDER.filter(k => here.some(p => p.army === c && p.kind === k)).map(k => `${here.filter(p => p.army === c && p.kind === k).length} ${UNITS[k].name}`).join(', ')}</div></div>`).join('');
+      tip.innerHTML = `<b>${esc(sec.name)}</b>${sec.coastal ? ' <span class="muted">· coast</span>' : ''}${byArmy || '<div class="muted">Empty</div>'}`;
+      tip.hidden = false;
+    });
+    el.addEventListener('mousemove', e => {
+      const box = (el.ownerSVGElement!.parentElement as HTMLElement).getBoundingClientRect();
+      tip.style.left = `${Math.min(e.clientX - box.left + 14, box.width - 200)}px`;
+      tip.style.top = `${e.clientY - box.top + 14}px`;
+    });
+    el.addEventListener('mouseleave', () => { tip.hidden = true; });
+    el.addEventListener('click', () => {
+      if (!canPlan) return;
+      if (mode && targets.has(id)) {
+        if (mode.t === 'move') add({ type: 'move', kind: mode.kind, from: mode.from, to: id });
+        else add({ type: 'launch', from: mode.from, target: id });
+        return;
+      }
+      mode = null;
+      sel = proj.pieces.some(p => p.army === army && p.loc === id) ? id : null;
+      render();
+    });
+  });
+  app.querySelectorAll<HTMLElement>('[data-focus]').forEach(b => b.onclick = () => { focusKind = focusKind === b.dataset.focus ? null : b.dataset.focus as Kind; render(); });
   app.querySelectorAll<HTMLElement>('[data-army]').forEach(b => b.onclick = () => { army = b.dataset.army as Color; sel = null; mode = null; render(); });
   app.querySelectorAll<HTMLElement>('[data-move]').forEach(b => b.onclick = () => { mode = { t: 'move', kind: b.dataset.move as Kind, from: sel! }; render(); });
   app.querySelectorAll<HTMLElement>('[data-upgrade]').forEach(b => b.onclick = () => add({ type: 'upgrade', kind: b.dataset.upgrade as 'S', at: sel! }));
@@ -265,6 +349,7 @@ function renderGame(r: RoomView, g: GameState) {
   on('missile', () => { const pick = pickMissile(proj, army!, sel!); if (pick) add({ type: 'missile', at: sel!, ...pick }); });
   on('reserve', () => { sel = 'RV'; mode = null; render(); });
   on('cancel', () => { mode = null; render(); });
+  on('close', () => { sel = null; render(); });
   on('submit', () => { sel = null; mode = null; send({ t: 'orders', orders, final: true }); });
   on('edit', () => send({ t: 'orders', orders, final: false }));
   on('pause', () => send({ t: 'pause' }));
@@ -283,39 +368,32 @@ function renderGame(r: RoomView, g: GameState) {
   }
 }
 
-/** Options for the selected sector or reserve of the active army. */
+/** Actions for the selected sector or reserve of the active army. */
 function locPanel(s: GameState, ctx: ReturnType<typeof newCtx>, at: Loc) {
   const ps = s.pieces.filter(p => p.army === army && p.loc === at);
-  const kinds = [...new Set(ps.map(p => p.kind))].sort((a, b) => UNITS[a].power - UNITS[b].power);
+  const kinds = KIND_ORDER.filter(k => ps.some(p => p.kind === k));
   const a = armyOf(s, army!);
   const rows = kinds.map(k => {
     const all = ps.filter(p => p.kind === k), free = all.filter(p => !ctx.moved.has(p.id));
     const btns = [
-      k !== 'M' && free.length ? `<button class="mini" data-move="${k}">${at === 'RV' ? 'To HQ' : 'Move'}</button>` : '',
-      UNITS[k].up && all.length >= 3 ? `<button class="mini secondary" data-upgrade="${k}">3 → ${UNITS[UNITS[k].up!].name}</button>` : '',
-      k === 'M' ? `<button class="mini" data-launch>Launch</button>` : '',
-    ].join(' ');
-    return `<div class="row"><span>${UNITS[k].name} ×${all.length}${free.length < all.length && k !== 'M' ? ` <span class="muted">(${all.length - free.length} already ordered)</span>` : ''}</span>${btns}</div>`;
+      k !== 'M' && free.length ? `<button class="sm primary" data-move="${k}">${at === 'RV' ? 'To HQ' : 'Move'}</button>` : '',
+      UNITS[k].up && all.length >= 3 ? `<button class="sm ghost" data-upgrade="${k}">3 → ${UNITS[UNITS[k].up!].name}</button>` : '',
+      k === 'M' ? `<button class="sm danger" data-launch>Launch</button>` : '',
+    ].join('');
+    return `<div class="urow"><span class="unit-icon sm" style="background:${ARMY_HEX[army!]}">${iconSvg(k, 16, '#fff')}</span>
+      <span class="urow-name">${UNITS[k].name} <b>×${all.length}</b>${free.length < all.length && k !== 'M' ? ` <em>${all.length - free.length} ordered</em>` : ''}</span>${btns}</div>`;
   }).join('');
-  const buys = at === 'RV' ? `<div class="row">Buy: ${BASE_KINDS.map(k => `<button class="mini secondary" data-buy="${k}" ${a.power < UNITS[k].power ? 'disabled' : ''}>${UNITS[k].name} (${UNITS[k].power})</button>`).join(' ')}</div>` : '';
+  const buys = at === 'RV' ? `<div class="buy"><span class="muted small">Buy with Power</span><div class="buy-row">${BASE_KINDS.map(k => `<button class="buybtn" data-buy="${k}" ${a.power < UNITS[k].power ? 'disabled' : ''}>${iconSvg(k, 16)}<span>${UNITS[k].name}</span><b>⚡${UNITS[k].power}</b></button>`).join('')}</div></div>` : '';
   const canMissile = value(ps) + (at === 'RV' ? a.power : 0) >= MISSILE_COST;
-  return `<div class="box"><b>${at === 'RV' ? `${COLOR_NAME[army!]} reserve · Power ${a.power}` : SECTORS[at].name}</b>
-    ${rows || '<p class="muted">No pieces.</p>'}${buys}
-    ${canMissile ? `<button class="mini" id="missile">Build a megamissile (≥ ${MISSILE_COST})</button>` : ''}</div>`;
+  return `<div class="selpanel">
+    <div class="selhead"><b>${at === 'RV' ? `${COLOR_NAME[army!]} reserve` : SECTORS[at].name}</b>${at === 'RV' ? `<span class="muted small">⚡ ${a.power} Power</span>` : ''}<button id="close" class="link">Close</button></div>
+    ${rows || '<p class="muted small">No pieces here.</p>'}${buys}
+    ${canMissile ? `<button class="sm danger wide" id="missile">${iconSvg('M', 14)} Build a megamissile (≥ ${MISSILE_COST})</button>` : ''}</div>`;
 }
 
 function changed() {
   send({ t: 'orders', orders, final: false });
   render();
-}
-
-function kindsSummary(kinds: Kind[]) {
-  const order: Kind[] = ['S', 'R', 'T', 'A', 'C', 'B', 'D', 'CR', 'M'];
-  return order.filter(k => kinds.includes(k)).map(k => `${UNITS[k].abbr}${kinds.filter(x => x === k).length}`).join(' ');
-}
-function flagsAt(g: GameState, c: Color) {
-  const a = armyOf(g, c);
-  return a?.alive ? '🚩'.repeat(a.flags.length) : '';
 }
 
 let tickTimer = 0;
@@ -326,7 +404,7 @@ function tick() {
     if (!room?.deadline || !el()) return;
     const left = Math.max(0, room.deadline - clockSkew - Date.now());
     const m = Math.floor(left / 60000), s = Math.floor(left / 1000) % 60;
-    el()!.textContent = `⏳ ${m}:${String(s).padStart(2, '0')}`;
+    el()!.textContent = `${m}:${String(s).padStart(2, '0')}`;
     el()!.classList.toggle('urgent', left < 30000);
   };
   upd();
