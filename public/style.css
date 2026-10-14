@@ -159,3 +159,13 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .blast { fill: radial-gradient(#fff, #f97316); fill: #f97316; stroke: #fde68a; stroke-width: 4; transform-box: fill-box; transform-origin: center; opacity: 0; }
 .pill.play { background: #1e3a5f; color: #bfdbfe; cursor: pointer; border: 1px solid #3b82f6; }
 .brand .ver { display: block; font-size: 10px; letter-spacing: .5px; color: var(--muted, #8a94a6); font-family: Inter, sans-serif; font-weight: 400; }
+.legend summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.legend summary::-webkit-details-marker { display: none; }
+.legend summary::after { content: '▾'; color: var(--muted); } .legend details:not([open]) summary::after { content: '▸'; }
+.legend summary h3 { margin: 0; }
+.legend table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.legend th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 0 6px 6px; }
+.legend td { padding: 5px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+.legend td svg { display: block; }
+.legend .lnum { text-align: center; font-family: var(--display); font-size: 16px; }
+.legend th:nth-child(3), .legend th:nth-child(4) { text-align: center; }

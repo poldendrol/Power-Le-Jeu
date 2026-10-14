@@ -342,13 +342,23 @@ function renderGame(r: RoomView, g: GameState) {
     <details><summary>Order sheets</summary>${g.report.orders.map(o => `<div class="sheet"><div><span class="swatch" style="background:${ARMY_HEX[o.army]}"></span><b>${COLOR_NAME[o.army]}</b></div><ol>${o.results.map(x => `<li class="${x.ok ? '' : 'bad'}">${esc(describeOrder(x.order, o.army))}${x.ok ? '' : ` <em>${esc(x.note ?? '')}</em>`}</li>`).join('') || '<li class="muted">No orders</li>'}</ol></div>`).join('')}</details>
   </section>` : '';
 
+  // ----- Legend: what every unit is worth -----
+  const MOB = { ground: 'Land', air: 'Air', ship: 'Sea', none: '' } as const;
+  const legend = `<section class="card legend"><details open><summary><h3>Unit legend</h3></summary>
+    <table><thead><tr><th></th><th>Unit</th><th title="Combat power">Power</th><th title="Sectors per move">Move</th><th></th></tr></thead><tbody>
+    ${KIND_ORDER.map(k => { const u = UNITS[k]; return `<tr>
+      <td>${iconSvg(k, 20, ARMY_HEX[army ?? 'yellow'])}</td><td>${u.name}</td>
+      <td class="lnum">${k === 'M' ? '💥' : `<b>${u.power}</b>`}</td><td class="lnum">${u.move || '–'}</td>
+      <td class="muted small">${k === 'M' ? `Destroys everything in a sector · built from ${MISSILE_COST} power` : MOB[u.mobility]}${u.up ? ` · 3 → ${UNITS[u.up].name}` : ''}</td></tr>`; }).join('')}
+    </tbody></table></details></section>`;
+
   app.innerHTML = `
     <div class="game">
       ${topbar}
       <main class="field-area">
         <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${hits}${tokens}${arrows}${fxLayer}</svg>
           <div class="tooltip" id="tip" hidden></div></div>
-        <aside class="side">${error ? `<div class="toast">${esc(error)}</div>` : ''}${forces}${command}${report}</aside>
+        <aside class="side">${error ? `<div class="toast">${esc(error)}</div>` : ''}${forces}${command}${report}${legend}</aside>
       </main>
     </div>`;
 
