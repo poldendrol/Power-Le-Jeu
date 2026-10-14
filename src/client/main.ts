@@ -200,7 +200,7 @@ function renderGame(r: RoomView, g: GameState) {
     <ul class="players">${g.seats.map((seat, i) => `
       <li class="${seat.armies.every(c => !armyOf(g, c).alive) ? 'dead' : ''}">
         <b>${esc(seat.name)}</b>${i === me ? ' (you)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
-        <span class="muted">· puissance ${totalPower(g, i)}</span>
+        <span class="muted">· power ${totalPower(g, i)}</span>
         ${seat.armies.map(c => { const a = armyOf(g, c); return `<div class="army"><span class="dot ${c}"></span>${COLOR_NAME[c]} ${a.alive ? '' : '☠️'} <span class="muted">Power ${a.power} · 🚩${a.flags.length} · reserve ${kindsSummary(g.pieces.filter(p => p.army === c && p.loc === 'RV').map(p => p.kind)) || '—'}</span></div>`; }).join('')}
       </li>`).join('')}
     </ul>`;
