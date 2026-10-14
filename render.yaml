@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: power-le-jeu
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
