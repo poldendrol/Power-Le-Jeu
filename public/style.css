@@ -73,8 +73,9 @@ input:focus, select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgb
 .pchip-stats { display: flex; gap: 10px; font-size: 11px; color: var(--muted); align-items: center; }
 .status { margin-left: auto; font-weight: 600; } .status.ready { color: var(--ok); } .status.writing { color: var(--gold2); } .status.out { color: var(--danger); }
 
-.field-area { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; align-items: start; }
-@media (max-width: 1000px) { .field-area { grid-template-columns: 1fr; padding: 10px; } .pchips { margin-left: 0; } }
+.field-area { display: grid; grid-template-columns: 240px minmax(0, 1fr) 380px; grid-template-areas: "legend board side"; gap: 18px; padding: 18px; max-width: 1500px; width: 100%; margin: 0 auto; align-items: start; }
+@media (max-width: 1250px) { .field-area { grid-template-columns: minmax(0, 1fr) 380px; grid-template-areas: "board side" "legend side"; } }
+@media (max-width: 1000px) { .field-area { grid-template-columns: 1fr; grid-template-areas: "board" "side" "legend"; padding: 10px; } .pchips { margin-left: 0; } }
 .board-frame { position: relative; border-radius: 18px; padding: 10px; background: linear-gradient(145deg, #1b2a44, #0b1424); border: 1px solid var(--line2); box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.06); max-width: calc(100vh - 110px); width: 100%; justify-self: center; }
 .board { display: block; width: 100%; height: auto; border-radius: 10px; }
 .sea-line { fill: none; stroke: rgba(255,255,255,.22); stroke-width: 1.2; stroke-dasharray: 4 5; }
@@ -169,3 +170,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .legend td svg { display: block; }
 .legend .lnum { text-align: center; font-family: var(--display); font-size: 16px; }
 .legend th:nth-child(3), .legend th:nth-child(4) { text-align: center; }
+
+.field-area > .board-frame { grid-area: board; } .field-area > .side { grid-area: side; } .legend-col { grid-area: legend; }
+@media (min-width: 1251px) { .legend-col { position: sticky; top: 84px; } }
+.legend td small { display: block; font-size: 11px; color: var(--muted); line-height: 1.3; }
