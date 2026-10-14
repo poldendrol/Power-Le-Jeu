@@ -154,8 +154,8 @@ const ART = boardArt();
 const KIND_ORDER: Kind[] = ['S', 'R', 'T', 'A', 'C', 'B', 'D', 'CR', 'M'];
 let focusKind: Kind | null = null; // highlight this kind of your pieces on the board
 
-function pieceToken(k: Kind, color: Color, n: number, x: number, y: number, extra = '') {
-  return `<g class="token ${extra}" transform="translate(${x},${y})">
+function pieceToken(k: Kind, color: Color, n: number, x: number, y: number, extra = '', attrs = '') {
+  return `<g class="token ${extra}" ${attrs} transform="translate(${x},${y})">
     <ellipse rx="11" ry="3.5" cy="11" class="token-shadow"/>
     <path d="${ICON[k]}" transform="translate(-13,-13) scale(1.08)" fill="${ARMY_HEX[color]}" class="token-shape"/>
     ${n > 1 ? `<g transform="translate(11,8)"><circle r="6.5" class="badge"/><text class="badge-text" y="3">${n}</text></g>` : ''}
@@ -227,8 +227,9 @@ function renderGame(r: RoomView, g: GameState) {
       const ps = here.filter(p => p.army === c && p.kind === k);
       if (!ps.length) continue;
       const planned = ps.some(p => ctx.moved.has(p.id) && ctx.prev.get(p.id) !== sec.id);
-      const focus = (focusKind === k || (mode?.t === 'pick' && mode.kind === k)) && c === army;
-      items.push({ k, c, n: ps.length, cls: `${planned ? 'planned' : ''} ${focus ? 'focus' : ''}` });
+      const focus = (focusKind === k || (mode?.t === 'pick' && mode.kind === k) || (mode?.t === 'move' && mode.from === sec.id && mode.kind === k)) && c === army;
+      const mine = canPlan && c === army && k !== 'M';
+      items.push({ k, c, n: ps.length, cls: `${planned ? 'planned' : ''} ${focus ? 'focus' : ''} ${mine ? 'mine' : ''}` });
     }
     const per = Math.max(1, Math.floor((b.w - 6) / 30));
     const rows = Math.ceil(items.length / per);
@@ -236,7 +237,7 @@ function renderGame(r: RoomView, g: GameState) {
     return items.map((it, i) => {
       const row = Math.floor(i / per), inRow = Math.min(per, items.length - row * per);
       const x = b.x + b.w / 2 + ((i % per) - (inRow - 1) / 2) * 30;
-      return pieceToken(it.k, it.c, it.n, x, top + row * 30, it.cls);
+      return pieceToken(it.k, it.c, it.n, x, top + row * 30, it.cls, it.cls.includes('mine') ? `data-tok-sec="${sec.id}" data-tok-kind="${it.k}"` : '');
     }).join('');
   }).join('');
   const hits = SECTORS.map(sec => `<path d="${sectorPath(sec)}" data-sec="${sec.id}" class="hit ${targets.has(sec.id) ? 'target' : ''} ${sources.has(sec.id) ? 'src' : ''} ${sel === sec.id ? 'sel' : ''}"/>`).join('');
@@ -319,10 +320,12 @@ function renderGame(r: RoomView, g: GameState) {
       if (!o) return `<li class="slot empty"><span class="num">${i + 1}</span><span class="muted">Empty order</span></li>`;
       return `<li class="slot ${errors.has(o) ? 'bad' : ''}"><span class="num">${i + 1}</span><span>${esc(describeOrder(o, army!))}${errors.has(o) ? `<em>${esc(errors.get(o)!)}</em>` : ''}</span><button class="x" data-del="${i}" title="Remove">✕</button></li>`;
     }).join('');
-    const hint = mode
+    const hint = mode?.t === 'move' && mode.from === sel
+      ? `<div class="hint active"><span>Click a <b>gold</b> sector to send the ${UNITS[mode.kind].name}, or click another of your units.</span> <button id="cancel" class="link">Cancel</button></div>${locPanel(proj, ctx, sel, mode.kind)}`
+      : mode
       ? `<div class="hint active">${mode.t === 'move' ? `Click a <b>gold</b> sector to send the ${UNITS[mode.kind].name}.` : mode.t === 'pick' ? `Click a <b>gold</b> sector to move a ${UNITS[mode.kind].name} there.${targets.size ? '' : ' None of them can move this round.'}` : `Pick the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="chipbtn" data-reserve="${a.color}"><span class="swatch" style="background:${ARMY_HEX[a.color]}"></span>${COLOR_NAME[a.color]}</button>`).join(' ')}`} <button id="cancel" class="link">Cancel</button></div>`
       : sel !== null ? locPanel(proj, ctx, sel)
-      : `<div class="hint">Click a unit in your army above, then a sector on the map. Or click a sector to see what's there.</div>`;
+      : `<div class="hint">Click one of your units on the map, then a <b>gold</b> sector to move it. Or pick a unit type above.</div>`;
     command = `<section class="card">
       <div class="card-head"><h3>Orders</h3><span class="muted small">${list.length} / ${g.ordersPerArmy}</span>
         <button class="ghost sm" id="reserve">Reserve · ⚡${armyOf(proj, army!).power}</button></div>
@@ -342,7 +345,7 @@ function renderGame(r: RoomView, g: GameState) {
     <div class="game">
       ${topbar}
       <main class="field-area">
-        <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${tokens}${arrows}${fxLayer}${hits}</svg>
+        <div class="board-frame"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">${ART}${labels}${hits}${tokens}${arrows}${fxLayer}</svg>
           <div class="tooltip" id="tip" hidden></div></div>
         <aside class="side">${error ? `<div class="toast">${esc(error)}</div>` : ''}${forces}${command}${report}</aside>
       </main>
@@ -386,19 +389,33 @@ function renderGame(r: RoomView, g: GameState) {
       tip.style.top = `${e.clientY - box.top + 14}px`;
     });
     el.addEventListener('mouseleave', () => { tip.hidden = true; });
-    el.addEventListener('click', () => {
-      if (!canPlan) return;
-      if (mode && targets.has(id)) {
-        if (mode.t === 'move') add({ type: 'move', kind: mode.kind, from: mode.from, to: id });
-        else if (mode.t === 'pick') add({ type: 'move', kind: mode.kind, from: pickFrom.get(id)!, to: id });
-        else add({ type: 'launch', from: mode.from, target: id });
-        return;
-      }
-      mode = null;
-      sel = proj.pieces.some(p => p.army === army && p.loc === id) ? id : null;
-      render();
-    });
+    el.addEventListener('click', () => clickSector(id));
   });
+  // Your own units on the map: click one, then click where it should go.
+  app.querySelectorAll<SVGGElement>('[data-tok-sec]').forEach(el => {
+    const id = Number(el.dataset.tokSec);
+    const hit = app.querySelector<SVGPathElement>(`[data-sec="${id}"]`)!;
+    el.addEventListener('mouseenter', () => hit.dispatchEvent(new MouseEvent('mouseenter')));
+    el.addEventListener('mousemove', e => hit.dispatchEvent(new MouseEvent('mousemove', e)));
+    el.addEventListener('mouseleave', () => { tip.hidden = true; });
+    el.addEventListener('click', () => clickSector(id, el.dataset.tokKind as Kind));
+  });
+  function clickSector(id: number, kind?: Kind) {
+    if (!canPlan) return;
+    const sameUnit = mode?.t === 'move' && mode.from === id && (!kind || mode.kind === kind);
+    if (mode && targets.has(id) && !(kind && mode.t === 'move' && mode.from === id)) {
+      if (mode.t === 'move') add({ type: 'move', kind: mode.kind, from: mode.from, to: id });
+      else if (mode.t === 'pick') add({ type: 'move', kind: mode.kind, from: pickFrom.get(id)!, to: id });
+      else add({ type: 'launch', from: mode.from, target: id });
+      return;
+    }
+    if (sameUnit) { mode = null; sel = null; return render(); } // clicking the picked unit again cancels
+    const free = (k: Kind) => proj.pieces.some(p => p.army === army && p.loc === id && p.kind === k && !ctx.moved.has(p.id));
+    const k = kind && free(kind) ? kind : KIND_ORDER.find(k => k !== 'M' && free(k));
+    sel = proj.pieces.some(p => p.army === army && p.loc === id) ? id : null;
+    mode = sel !== null && k ? { t: 'move', kind: k, from: id } : null;
+    render();
+  }
   app.querySelectorAll<HTMLElement>('[data-pick]').forEach(b => b.onclick = () => {
     const k = b.dataset.pick as Kind;
     if (!canPlan) { focusKind = focusKind === k ? null : k; return render(); }
@@ -443,14 +460,14 @@ function renderGame(r: RoomView, g: GameState) {
 }
 
 /** Actions for the selected sector or reserve of the active army. */
-function locPanel(s: GameState, ctx: ReturnType<typeof newCtx>, at: Loc) {
+function locPanel(s: GameState, ctx: ReturnType<typeof newCtx>, at: Loc, active?: Kind) {
   const ps = s.pieces.filter(p => p.army === army && p.loc === at);
   const kinds = KIND_ORDER.filter(k => ps.some(p => p.kind === k));
   const a = armyOf(s, army!);
   const rows = kinds.map(k => {
     const all = ps.filter(p => p.kind === k), free = all.filter(p => !ctx.moved.has(p.id));
     const btns = [
-      k !== 'M' && free.length ? `<button class="sm primary" data-move="${k}">${at === 'RV' ? 'To HQ' : 'Move'}</button>` : '',
+      k !== 'M' && free.length ? `<button class="sm ${active === k ? 'primary' : 'ghost'}" data-move="${k}">${active === k ? 'Selected' : at === 'RV' ? 'To HQ' : 'Move'}</button>` : '',
       UNITS[k].up && all.length >= 3 ? `<button class="sm ghost" data-upgrade="${k}">3 → ${UNITS[UNITS[k].up!].name}</button>` : '',
       k === 'M' ? `<button class="sm danger" data-launch>Launch</button>` : '',
     ].join('');
