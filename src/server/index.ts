@@ -25,10 +25,10 @@ const server = createServer(async (req, res) => {
   try {
     if (!file.startsWith(PUBLIC)) throw new Error('outside');
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, { 'cache-control': 'no-cache', 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
     res.end(body);
   } catch {
-    res.writeHead(200, { 'content-type': TYPES['.html'] });
+    res.writeHead(200, { 'cache-control': 'no-cache', 'content-type': TYPES['.html'] });
     res.end(await readFile(join(PUBLIC, 'index.html')));
   }
 });

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/client/main.ts --bundle --outfile=public/app.js --format=esm --target=es2020 && esbuild src/server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
+    "build": "esbuild src/client/main.ts --define:BUILD=\"\\\"$(date -u +%Y-%m-%d_%H:%M)\\\"\" --bundle --outfile=public/app.js --format=esm --target=es2020 && esbuild src/server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.js",
     "start": "node dist/server.js",
     "dev": "npm run build && node dist/server.js",
     "test": "tsx src/shared/rules.test.ts",

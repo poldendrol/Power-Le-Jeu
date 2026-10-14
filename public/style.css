@@ -158,3 +158,4 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .clash-icon { font-size: 22px; fill: #fff; text-anchor: middle; transform-box: fill-box; transform-origin: center; opacity: 0; paint-order: stroke; stroke: #000; stroke-width: 3px; }
 .blast { fill: radial-gradient(#fff, #f97316); fill: #f97316; stroke: #fde68a; stroke-width: 4; transform-box: fill-box; transform-origin: center; opacity: 0; }
 .pill.play { background: #1e3a5f; color: #bfdbfe; cursor: pointer; border: 1px solid #3b82f6; }
+.brand .ver { display: block; font-size: 10px; letter-spacing: .5px; color: var(--muted, #8a94a6); font-family: Inter, sans-serif; font-weight: 400; }

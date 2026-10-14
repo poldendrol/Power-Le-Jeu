@@ -1,3 +1,4 @@
+declare const BUILD: string;
 import { BOARD_SIZE } from '../shared/board';
 import { ARMY_HEX, ICON, bbox, boardArt, iconSvg, sectorPath } from './art';
 import {
@@ -272,7 +273,7 @@ function renderGame(r: RoomView, g: GameState) {
   }).join('');
   const deadline = r.deadline ? r.deadline - clockSkew : null;
   const topbar = `<header class="topbar">
-    <div class="brand">POWER</div>
+    <div class="brand" title="Version ${BUILD}">POWER<small class="ver">v${BUILD.replace("_", " ")}</small></div>
     <div class="round"><span class="muted small">ROUND</span><b>${g.round}</b></div>
     ${replay ? `<button class="pill play" id="skip">▶ Round ${g.round} in action · skip</button>` : ''}
     ${deadline && !over ? `<div class="timer" id="timer"></div>` : ''}
