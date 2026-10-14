@@ -1,265 +1,359 @@
-// Game rules for Power, le jeu. Everything marked PROVISIONAL is a best guess
-// waiting to be confirmed against the original rulebook.
+// Rules of Power, le jeu, following http://jeuxstrategie.free.fr/Power_complet.php
+import { COLORS, COLOR_FR, LETTER, SECTORS, hqOf, type Color } from './board';
+export { COLORS, COLOR_FR, LETTER, SECTORS, hqOf, type Color };
 
-export type Color = 'red' | 'blue' | 'green' | 'yellow';
-export const COLORS: Color[] = ['red', 'blue', 'green', 'yellow'];
+export type Kind = 'S' | 'T' | 'C' | 'D' | 'R' | 'A' | 'B' | 'CR' | 'M';
+export type BaseKind = 'S' | 'T' | 'C' | 'D';
+export type Mobility = 'ground' | 'air' | 'ship' | 'none';
 
-export type Terrain = 'land' | 'sea';
-export type UnitKind =
-  | 'soldier' | 'tank' | 'fighter' | 'destroyer'
-  | 'regiment' | 'heavyTank' | 'bomber' | 'cruiser'
-  | 'megamissile';
-
-export interface UnitSpec {
-  name: string;      // French display name
-  power: number;
-  move: number;      // max squares per order (orthogonal steps)
-  domain: 'land' | 'sea' | 'air'; // air may cross and stop anywhere
-}
-
-// PROVISIONAL values for big units, move ranges and domains.
-export const UNITS: Record<Exclude<UnitKind, 'megamissile'>, UnitSpec> = {
-  soldier:   { name: 'Soldat',      power: 2,   move: 1, domain: 'land' },
-  tank:      { name: 'Tank',        power: 3,   move: 2, domain: 'land' },
-  fighter:   { name: 'Avion',       power: 5,   move: 4, domain: 'air' },
-  destroyer: { name: 'Destroyer',   power: 10,  move: 3, domain: 'sea' },
-  regiment:  { name: 'Régiment',    power: 20,  move: 1, domain: 'land' },
-  heavyTank: { name: 'Tank lourd',  power: 30,  move: 2, domain: 'land' },
-  bomber:    { name: 'Bombardier',  power: 50,  move: 4, domain: 'air' },
-  cruiser:   { name: 'Croiseur',    power: 100, move: 3, domain: 'sea' },
+export interface UnitSpec { name: string; power: number; move: number; mobility: Mobility; group: 1 | 2 | 0; up?: Kind; base?: BaseKind }
+export const UNITS: Record<Kind, UnitSpec> = {
+  S:  { name: 'Soldat',         power: 2,  move: 2, mobility: 'ground', group: 1, up: 'R' },
+  T:  { name: 'Tank',           power: 3,  move: 3, mobility: 'ground', group: 1, up: 'A' },
+  C:  { name: 'Chasseur',       power: 5,  move: 5, mobility: 'air',    group: 1, up: 'B' },
+  D:  { name: 'Destroyer',      power: 10, move: 1, mobility: 'ship',   group: 1, up: 'CR' },
+  R:  { name: 'Régiment',       power: 20, move: 2, mobility: 'ground', group: 2, base: 'S' },
+  A:  { name: 'Tank d’assaut',  power: 30, move: 3, mobility: 'ground', group: 2, base: 'T' },
+  B:  { name: 'Bombardier',     power: 25, move: 5, mobility: 'air',    group: 2, base: 'C' },
+  CR: { name: 'Croiseur',       power: 50, move: 1, mobility: 'ship',   group: 2, base: 'D' },
+  M:  { name: 'Méga-missile',   power: 0,  move: 0, mobility: 'none',   group: 0 },
 };
-export type BoardUnitKind = keyof typeof UNITS;
+export const KINDS = Object.keys(UNITS) as Kind[];
+export const BASE_KINDS: BaseKind[] = ['S', 'T', 'C', 'D'];
+export const MISSILE_COST = 100;
+export const ORDERS_PER_ARMY = 5;
+export const START: Partial<Record<Kind, number>> = { S: 2, T: 2, C: 2, D: 2 };
 
-// PROVISIONAL trade-up recipes: pieces in reserve -> one new piece in reserve.
-export const TRADES: { give: Partial<Record<UnitKind, number>>; get: UnitKind }[] = [
-  { give: { soldier: 3 }, get: 'regiment' },
-  { give: { tank: 3 }, get: 'heavyTank' },
-  { give: { fighter: 3 }, get: 'bomber' },
-  { give: { destroyer: 3 }, get: 'cruiser' },
-  { give: { regiment: 1, heavyTank: 1, bomber: 1, cruiser: 1 }, get: 'megamissile' },
-];
-
-// PROVISIONAL starting forces, placed on the home country.
-export const START_FORCES: Partial<Record<BoardUnitKind, number>> = {
-  soldier: 6, tank: 4, fighter: 2, destroyer: 2,
-};
-export const ORDERS_PER_TURN = 5;
-
-// ---------- Board ----------
-// PROVISIONAL layout. Lowercase letter = headquarters (flag) of that color,
-// uppercase = home land, n = neutral land, . = sea.
-const MAP = [
-  'rRRRnnnBBBb',
-  'RRRRn.nBBBB',
-  'RRRRn.nBBBB',
-  'RRR.....BBB',
-  'nnn.....nnn',
-  'n....n....n',
-  'nnn.....nnn',
-  'GGG.....YYY',
-  'GGGGn.nYYYY',
-  'GGGGn.nYYYY',
-  'gGGGnnnYYYy',
-];
-const LETTER: Record<string, Color> = { r: 'red', b: 'blue', g: 'green', y: 'yellow' };
-
-export interface Cell { id: number; x: number; y: number; terrain: Terrain; home?: Color; hq?: Color }
-export const W = MAP[0].length;
-export const H = MAP.length;
-export const CELLS: Cell[] = MAP.flatMap((row, y) => [...row].map((ch, x) => {
-  const id = y * W + x;
-  if (ch === '.') return { id, x, y, terrain: 'sea' as Terrain };
-  if (ch === 'n') return { id, x, y, terrain: 'land' as Terrain };
-  const color = LETTER[ch.toLowerCase()];
-  return { id, x, y, terrain: 'land' as Terrain, home: color, hq: ch === ch.toLowerCase() ? color : undefined };
-}));
-export const hqOf = (c: Color) => CELLS.find(k => k.hq === c)!.id;
-
-function neighbors(id: number): number[] {
-  const x = id % W, y = Math.floor(id / W), out: number[] = [];
-  if (x > 0) out.push(id - 1);
-  if (x < W - 1) out.push(id + 1);
-  if (y > 0) out.push(id - W);
-  if (y < H - 1) out.push(id + W);
-  return out;
-}
-
-const canEnter = (kind: BoardUnitKind, cell: Cell) =>
-  UNITS[kind].domain === 'air' || UNITS[kind].domain === cell.terrain;
-
-/** Cells reachable by a unit kind from `from` (excluding `from`). Sea units may
- *  also enter a coastal land square? No: they stay at sea. PROVISIONAL. */
-export function reachable(kind: BoardUnitKind, from: number): Set<number> {
-  const seen = new Map<number, number>([[from, 0]]);
+// ---------- Movement ----------
+/** Sectors a piece of `kind` standing on `from` may move to this round. */
+export function reachable(kind: Kind, from: number): Set<number> {
+  const u = UNITS[kind];
+  const out = new Set<number>();
+  if (u.mobility === 'none') return out;
+  const enter = (id: number) => {
+    const s = SECTORS[id];
+    if (u.mobility === 'ship') return s.kind === 'sea' || s.kind === 'island' || s.coastal;
+    return s.kind !== 'sea'; // ground and air never enter or cross the sea
+  };
+  // Ground pieces stop on an island or HQ: they cannot cross it in the same round.
+  const passThrough = (id: number) => u.mobility === 'air' || (SECTORS[id].kind !== 'island' && SECTORS[id].kind !== 'hq');
+  const dist = new Map([[from, 0]]);
   const queue = [from];
   while (queue.length) {
     const cur = queue.shift()!;
-    const d = seen.get(cur)!;
-    if (d === UNITS[kind].move) continue;
-    for (const n of neighbors(cur)) {
-      if (seen.has(n) || !canEnter(kind, CELLS[n])) continue;
-      seen.set(n, d + 1);
+    const d = dist.get(cur)!;
+    if (d === u.move || (cur !== from && !passThrough(cur))) continue;
+    for (const n of SECTORS[cur].adj) {
+      if (dist.has(n) || !enter(n)) continue;
+      dist.set(n, d + 1);
+      out.add(n);
       queue.push(n);
     }
   }
-  seen.delete(from);
-  return new Set(seen.keys());
+  return out;
 }
 
 // ---------- State ----------
-export interface Unit { id: number; kind: BoardUnitKind; owner: Color; cell: number }
-export interface Player { color: Color; name: string; alive: boolean; reserve: Partial<Record<UnitKind, number>> }
+export type Loc = number | 'RV';
+export interface Piece { id: number; kind: Kind; army: Color; loc: Loc }
+export interface Army { color: Color; seat: number; alive: boolean; power: number; flags: Color[] }
+export interface Seat { name: string; armies: Color[] }
+export interface OrderResult { order: Order; ok: boolean; note?: string }
+export interface Report { round: number; orders: { army: Color; results: OrderResult[] }[]; events: string[] }
 export interface GameState {
-  turn: number;
-  players: Player[];
-  units: Unit[];
-  nextUnitId: number;
-  winner?: Color;
-  log: string[]; // events of the last resolved turn
+  round: number;
+  arbiter: number;         // seat that executes first this round
+  seats: Seat[];
+  armies: Army[];
+  pieces: Piece[];
+  nextId: number;
+  ordersPerArmy: number;
+  powerCap: number;        // max Power collected per army per round
+  lastRound: boolean;      // time is up: this round is the final one
+  winner?: number;         // seat index
+  endReason?: string;
+  report: Report | null;
 }
 
 export type Order =
-  | { type: 'move'; unitIds: number[]; to: number }
-  | { type: 'deploy'; kind: BoardUnitKind; count: number; to: number } // reserve -> own home land
-  | { type: 'trade'; recipe: number }
-  | { type: 'missile'; target: number };
+  | { type: 'move'; kind: Kind; from: Loc; to: number }
+  | { type: 'buy'; kind: BaseKind }
+  | { type: 'upgrade'; kind: BaseKind; at: Loc }
+  | { type: 'missile'; at: Loc; use: Partial<Record<Kind, number>>; power: number }
+  | { type: 'launch'; from: Loc; target: Loc; reserveOf?: Color };
 
-export function newGame(players: { color: Color; name: string }[]): GameState {
-  const state: GameState = { turn: 1, players: [], units: [], nextUnitId: 1, log: [] };
-  for (const p of players) {
-    state.players.push({ color: p.color, name: p.name, alive: true, reserve: {} });
-    const land = CELLS.filter(c => c.home === p.color && !c.hq);
-    const hq = hqOf(p.color);
-    // The fleet starts on the sea square touching the home country nearest the HQ.
-    const sea = CELLS.filter(c => c.terrain === 'sea' && neighbors(c.id).some(n => CELLS[n].home === p.color))
-      .sort((a, b) => dist(a.id, hq) - dist(b.id, hq));
-    let li = 0;
-    for (const [kind, n] of Object.entries(START_FORCES) as [BoardUnitKind, number][]) {
-      for (let i = 0; i < n; i++) {
-        const cell = UNITS[kind].domain === 'sea' ? sea[0].id : land[li++ % land.length].id;
-        state.units.push({ id: state.nextUnitId++, kind, owner: p.color, cell });
-      }
-    }
-  }
-  return state;
-}
-
-const dist = (a: number, b: number) =>
-  Math.abs((a % W) - (b % W)) + Math.abs(Math.floor(a / W) - Math.floor(b / W));
-
-export const power = (units: Unit[]) => units.reduce((s, u) => s + UNITS[u.kind].power, 0);
-
-/** Returns an error message, or null if the order list is legal for this player. */
-export function validateOrders(state: GameState, color: Color, orders: Order[]): string | null {
-  if (orders.length > ORDERS_PER_TURN) return `Maximum ${ORDERS_PER_TURN} ordres`;
-  const used = new Set<number>();
-  const reserve = { ...state.players.find(p => p.color === color)!.reserve };
-  for (const o of orders) {
-    if (o.type === 'move') {
-      if (!o.unitIds.length) return 'Ordre vide';
-      const units = o.unitIds.map(id => state.units.find(u => u.id === id));
-      if (units.some(u => !u || u.owner !== color)) return 'Unité invalide';
-      const from = units[0]!.cell;
-      for (const u of units as Unit[]) {
-        if (used.has(u.id)) return 'Une unité ne peut recevoir qu’un ordre';
-        used.add(u.id);
-        if (u.cell !== from) return 'Un ordre déplace des unités d’une seule case';
-        if (!reachable(u.kind, from).has(o.to)) return `${UNITS[u.kind].name} ne peut pas atteindre cette case`;
-      }
-    } else if (o.type === 'deploy') {
-      const cell = CELLS[o.to];
-      if (cell?.home !== color) return 'Déploiement uniquement dans votre pays';
-      if (!canEnter(o.kind, cell) || o.count < 1) return 'Déploiement invalide';
-      if ((reserve[o.kind] ?? 0) < o.count) return 'Pas assez d’unités en réserve';
-      reserve[o.kind]! -= o.count;
-    } else if (o.type === 'trade') {
-      const r = TRADES[o.recipe];
-      if (!r) return 'Échange invalide';
-      for (const [k, n] of Object.entries(r.give) as [UnitKind, number][]) {
-        if ((reserve[k] ?? 0) < n) return 'Pas assez d’unités en réserve pour cet échange';
-        reserve[k]! -= n;
-      }
-      reserve[r.get] = (reserve[r.get] ?? 0) + 1;
-    } else if (o.type === 'missile') {
-      if ((reserve.megamissile ?? 0) < 1) return 'Pas de mégamissile en réserve';
-      if (!CELLS[o.target]) return 'Cible invalide';
-      reserve.megamissile! -= 1;
-    } else return 'Ordre inconnu';
-  }
-  return null;
-}
-
-const nameOf = (s: GameState, c: Color) => s.players.find(p => p.color === c)!.name;
-const at = (c: number) => `${String.fromCharCode(65 + (c % W))}${Math.floor(c / W) + 1}`;
-export const cellLabel = at;
-
-/** Resolve one turn: all orders of all players happen at the same time. */
-export function resolveTurn(prev: GameState, allOrders: Partial<Record<Color, Order[]>>): GameState {
-  const s: GameState = structuredClone(prev);
-  s.log = [];
-  const P = (c: Color) => s.players.find(p => p.color === c)!;
-
-  // 1. Trades, in reserve.
-  for (const [color, orders] of Object.entries(allOrders) as [Color, Order[]][]) {
-    for (const o of orders) if (o.type === 'trade') {
-      const r = TRADES[o.recipe], res = P(color).reserve;
-      for (const [k, n] of Object.entries(r.give) as [UnitKind, number][]) res[k]! -= n;
-      res[r.get] = (res[r.get] ?? 0) + 1;
-      s.log.push(`${nameOf(s, color)} échange contre ${r.get === 'megamissile' ? 'un mégamissile' : UNITS[r.get as BoardUnitKind].name}`);
-    }
-  }
-  // 2. Moves and deployments, simultaneously.
-  for (const [color, orders] of Object.entries(allOrders) as [Color, Order[]][]) {
-    for (const o of orders) {
-      if (o.type === 'move') {
-        for (const id of o.unitIds) s.units.find(u => u.id === id)!.cell = o.to;
-      } else if (o.type === 'deploy') {
-        P(color).reserve[o.kind]! -= o.count;
-        for (let i = 0; i < o.count; i++) s.units.push({ id: s.nextUnitId++, kind: o.kind, owner: color, cell: o.to });
-        s.log.push(`${nameOf(s, color)} déploie ${o.count} ${UNITS[o.kind].name} en ${at(o.to)}`);
-      }
-    }
-  }
-  // 3. Megamissiles destroy everything on the target square, after movement.
-  for (const [color, orders] of Object.entries(allOrders) as [Color, Order[]][]) {
-    for (const o of orders) if (o.type === 'missile') {
-      P(color).reserve.megamissile! -= 1;
-      const hit = s.units.filter(u => u.cell === o.target);
-      s.units = s.units.filter(u => u.cell !== o.target);
-      s.log.push(`💥 ${nameOf(s, color)} lance un mégamissile sur ${at(o.target)} (${hit.length} unités détruites)`);
-    }
-  }
-  // 4. Battles: on each contested square the strongest force captures the others.
-  //    PROVISIONAL: on a tie nobody is captured and the forces stay.
-  const byCell = new Map<number, Unit[]>();
-  for (const u of s.units) byCell.set(u.cell, [...(byCell.get(u.cell) ?? []), u]);
-  for (const [cell, units] of byCell) {
-    const owners = [...new Set(units.map(u => u.owner))];
-    if (owners.length < 2) continue;
-    const totals = owners.map(o => ({ o, p: power(units.filter(u => u.owner === o)) })).sort((a, b) => b.p - a.p);
-    const summary = totals.map(t => `${nameOf(s, t.o)} ${t.p}`).join(' vs ');
-    if (totals[0].p === totals[1].p) { s.log.push(`⚔️ ${at(cell)}: égalité (${summary})`); continue; }
-    const winner = totals[0].o;
-    const losers = units.filter(u => u.owner !== winner);
-    for (const u of losers) P(winner).reserve[u.kind] = (P(winner).reserve[u.kind] ?? 0) + 1;
-    const lost = new Set(losers.map(u => u.id));
-    s.units = s.units.filter(u => !lost.has(u.id));
-    s.log.push(`⚔️ ${at(cell)}: ${nameOf(s, winner)} gagne (${summary}) et capture ${losers.length} unités`);
-  }
-  // 5. Flags: a player alone on an enemy headquarters captures that flag.
-  //    The defeated player's remaining pieces leave the board. PROVISIONAL.
-  for (const p of s.players) if (p.alive) {
-    const occupants = s.units.filter(u => u.cell === hqOf(p.color));
-    const owners = new Set(occupants.map(u => u.owner));
-    if (owners.size === 1 && !owners.has(p.color)) {
-      const captor = [...owners][0];
-      p.alive = false;
-      s.units = s.units.filter(u => u.owner !== p.color);
-      s.log.push(`🚩 ${nameOf(s, captor)} prend le drapeau de ${p.name} !`);
-    }
-  }
-  const alive = s.players.filter(p => p.alive);
-  if (alive.length === 1) { s.winner = alive[0].color; s.log.push(`🏆 ${alive[0].name} remporte la partie`); }
-  s.turn++;
+export function newGame(names: string[]): GameState {
+  const n = names.length;
+  if (n < 2 || n > 4) throw new Error('2 à 4 joueurs');
+  // Two players: each commands two neighbouring armies. Three players: the green territory stays empty.
+  const split: Color[][] = n === 2 ? [['red', 'green'], ['blue', 'yellow']] : COLORS.slice(0, n).map(c => [c]);
+  const s: GameState = {
+    round: 1, arbiter: 0, seats: names.map((name, i) => ({ name, armies: split[i] })), armies: [], pieces: [], nextId: 1,
+    ordersPerArmy: ORDERS_PER_ARMY, powerCap: n === 2 ? 2 : 3, lastRound: false, report: null,
+  };
+  s.seats.forEach((seat, i) => seat.armies.forEach(color => {
+    s.armies.push({ color, seat: i, alive: true, power: 0, flags: [color] });
+    for (const [k, c] of Object.entries(START) as [Kind, number][]) for (let j = 0; j < c; j++) s.pieces.push({ id: s.nextId++, kind: k, army: color, loc: hqOf(color) });
+  }));
   return s;
+}
+
+export const armyOf = (s: GameState, c: Color) => s.armies.find(a => a.color === c)!;
+export const seatOfArmy = (s: GameState, c: Color) => armyOf(s, c).seat;
+export const value = (ps: Piece[]) => ps.reduce((t, p) => t + UNITS[p.kind].power, 0);
+export const locName = (l: Loc, army?: Color) => l === 'RV' ? (army ? `Réserve ${LETTER[army]}` : 'Réserve') : SECTORS[l].code;
+export const totalPower = (s: GameState, seat: number) =>
+  s.armies.filter(a => a.seat === seat).reduce((t, a) => t + a.power + value(s.pieces.filter(p => p.army === a.color)), 0);
+
+export function describeOrder(o: Order, army: Color): string {
+  switch (o.type) {
+    case 'move': return `${UNITS[o.kind].name} ${locName(o.from, army)} → ${locName(o.to)}`;
+    case 'buy': return `Échanger ${UNITS[o.kind].power} Power contre 1 ${UNITS[o.kind].name}`;
+    case 'upgrade': return `3 ${UNITS[o.kind].name} → 1 ${UNITS[UNITS[o.kind].up!].name} (${locName(o.at, army)})`;
+    case 'missile': return `Créer un méga-missile (${locName(o.at, army)})`;
+    case 'launch': return `Lancer un méga-missile sur ${o.target === 'RV' ? `la réserve ${LETTER[o.reserveOf!]}` : locName(o.target)}`;
+  }
+}
+
+// ---------- Executing orders ----------
+interface Ctx {
+  moved: Set<number>;           // pieces that moved (or were created by an exchange on the board) this round
+  prev: Map<number, Loc>;       // where a moved piece came from, for rebounds
+  launches: { army: Color; target: Loc; reserveOf?: Color }[];
+}
+export const newCtx = (): Ctx => ({ moved: new Set(), prev: new Map(), launches: [] });
+
+const piecesAt = (s: GameState, army: Color, loc: Loc, kind?: Kind) =>
+  s.pieces.filter(p => p.army === army && p.loc === loc && (!kind || p.kind === kind));
+
+/** Apply one order for `army`. Returns an error (the order is then skipped) or null. */
+export function executeOrder(s: GameState, ctx: Ctx, army: Color, o: Order): string | null {
+  const a = armyOf(s, army);
+  if (!a.alive) return 'Armée éliminée';
+  const isLoc = (l: unknown) => l === 'RV' || (typeof l === 'number' && !!SECTORS[l]);
+  if ('kind' in o && !UNITS[o.kind]) return 'Ordre invalide';
+  if (('from' in o && !isLoc(o.from)) || ('at' in o && !isLoc(o.at)) || ('to' in o && !SECTORS[o.to])) return 'Ordre invalide';
+  switch (o.type) {
+    case 'move': {
+      const p = piecesAt(s, army, o.from, o.kind).find(p => !ctx.moved.has(p.id));
+      if (!p) return `Aucun ${UNITS[o.kind].name} disponible en ${locName(o.from, army)}`;
+      if (o.kind === 'M') return 'Un méga-missile ne se déplace pas';
+      if (o.from === 'RV') { if (o.to !== hqOf(army)) return 'Depuis la réserve, uniquement vers son QG'; }
+      else if (!reachable(o.kind, o.from).has(o.to)) return `${UNITS[o.kind].name} ne peut pas aller de ${locName(o.from)} à ${locName(o.to)}`;
+      ctx.moved.add(p.id); ctx.prev.set(p.id, p.loc); p.loc = o.to;
+      return null;
+    }
+    case 'buy': {
+      const cost = UNITS[o.kind]?.power;
+      if (!BASE_KINDS.includes(o.kind)) return 'Échange invalide';
+      if (a.power < cost) return 'Pas assez de Power';
+      a.power -= cost;
+      s.pieces.push({ id: s.nextId++, kind: o.kind, army, loc: 'RV' });
+      return null;
+    }
+    case 'upgrade': {
+      if (!BASE_KINDS.includes(o.kind)) return 'Échange invalide';
+      const three = piecesAt(s, army, o.at, o.kind).slice(0, 3);
+      if (three.length < 3) return `Il faut 3 ${UNITS[o.kind].name} sur le même secteur`;
+      const gone = new Set(three.map(p => p.id));
+      s.pieces = s.pieces.filter(p => !gone.has(p.id));
+      const np = { id: s.nextId++, kind: UNITS[o.kind].up!, army, loc: o.at };
+      s.pieces.push(np);
+      if (o.at !== 'RV') ctx.moved.add(np.id); // an exchanged piece cannot move afterwards
+      return null;
+    }
+    case 'missile': {
+      const power = o.at === 'RV' ? Math.max(0, Math.floor(o.power || 0)) : 0;
+      if (power > a.power) return 'Pas assez de Power';
+      const used: Piece[] = [];
+      for (const [k, n] of Object.entries(o.use) as [Kind, number][]) {
+        if (k === 'M' || !n) continue;
+        const avail = piecesAt(s, army, o.at, k).filter(p => !used.includes(p));
+        if (avail.length < n) return 'Pièces manquantes pour le méga-missile';
+        used.push(...avail.slice(0, n));
+      }
+      if (value(used) + power < MISSILE_COST) return `Il faut au moins ${MISSILE_COST} de puissance`;
+      a.power -= power;
+      const gone = new Set(used.map(p => p.id));
+      s.pieces = s.pieces.filter(p => !gone.has(p.id));
+      const np = { id: s.nextId++, kind: 'M' as Kind, army, loc: o.at };
+      s.pieces.push(np);
+      return null;
+    }
+    case 'launch': {
+      const m = piecesAt(s, army, o.from, 'M')[0];
+      if (!m) return `Pas de méga-missile en ${locName(o.from, army)}`;
+      if (o.target === 'RV' ? !o.reserveOf || !armyOf(s, o.reserveOf) : !SECTORS[o.target]) return 'Cible invalide';
+      s.pieces = s.pieces.filter(p => p !== m);
+      ctx.launches.push({ army, target: o.target, reserveOf: o.reserveOf });
+      return null;
+    }
+  }
+  return 'Ordre inconnu';
+}
+
+/** Best set of pieces at `at` reaching MISSILE_COST with the least waste (Power fills the gap in reserve). */
+export function pickMissile(s: GameState, army: Color, at: Loc): { use: Partial<Record<Kind, number>>; power: number } | null {
+  const ps = s.pieces.filter(p => p.army === army && p.loc === at && p.kind !== 'M');
+  const powerAvail = at === 'RV' ? armyOf(s, army).power : 0;
+  // Subset-sum over piece values, capped search space (pieces per sector stay small).
+  let best: { sum: number; set: Piece[] } | null = null;
+  const sorted = [...ps].sort((x, y) => UNITS[y.kind].power - UNITS[x.kind].power);
+  const go = (i: number, sum: number, set: Piece[]) => {
+    const need = Math.max(0, MISSILE_COST - sum);
+    if (need <= powerAvail) {
+      const total = sum + need;
+      if (!best || total < best.sum || (total === best.sum && set.length > best.set.length)) best = { sum: total, set: [...set] };
+      if (need === 0) return;
+    }
+    if (i >= sorted.length) return;
+    go(i + 1, sum + UNITS[sorted[i].kind].power, [...set, sorted[i]]);
+    go(i + 1, sum, set);
+  };
+  if (sorted.length <= 18) go(0, 0, []);
+  if (!best) return null;
+  const b = best as { sum: number; set: Piece[] };
+  const use: Partial<Record<Kind, number>> = {};
+  for (const p of b.set) use[p.kind] = (use[p.kind] ?? 0) + 1;
+  return { use, power: Math.max(0, MISSILE_COST - value(b.set)) };
+}
+
+// ---------- Resolving a round ----------
+export function resolveRound(prev: GameState, orders: Partial<Record<Color, Order[]>>): GameState {
+  const s: GameState = structuredClone(prev);
+  const ctx = newCtx();
+  const report: Report = { round: s.round, orders: [], events: [] };
+  const ev = (t: string) => report.events.push(t);
+  const seatName = (i: number) => s.seats[i].name;
+
+  // 1-2. Orders are executed seat by seat, starting with the arbiter, each list top to bottom.
+  for (let k = 0; k < s.seats.length; k++) {
+    const seat = (s.arbiter + k) % s.seats.length;
+    for (const color of s.seats[seat].armies) {
+      const a = armyOf(s, color);
+      if (!a.alive) continue;
+      const list = (orders[color] ?? []).slice(0, s.ordersPerArmy);
+      const results = list.map(o => {
+        let err: string | null;
+        try { err = executeOrder(s, ctx, color, o); } catch { err = 'Ordre invalide'; }
+        return { order: o, ok: !err, note: err ?? undefined };
+      });
+      report.orders.push({ army: color, results });
+      if (!results.some(r => r.ok)) penalty(s, a, ev);
+    }
+  }
+
+  // Méga-missiles land once every piece has moved.
+  for (const l of ctx.launches) {
+    const hit = l.target === 'RV' ? s.pieces.filter(p => p.army === l.reserveOf && p.loc === 'RV') : s.pieces.filter(p => p.loc === l.target);
+    const gone = new Set(hit.map(p => p.id));
+    s.pieces = s.pieces.filter(p => !gone.has(p.id));
+    ev(`💥 ${COLOR_FR[l.army]} lance un méga-missile sur ${l.target === 'RV' ? `la réserve ${LETTER[l.reserveOf!]}` : locName(l.target)} : ${hit.length} pièce(s) détruite(s)`);
+  }
+
+  // 3. Conflicts. Ties first: tied pieces that moved bounce back once.
+  const rebounded = new Set<number>();
+  const contested = () => {
+    const m = new Map<number, Piece[]>();
+    for (const p of s.pieces) if (p.loc !== 'RV') m.set(p.loc, [...(m.get(p.loc) ?? []), p]);
+    return [...m].filter(([, ps]) => new Set(ps.map(p => seatOfArmy(s, p.army))).size > 1);
+  };
+  const totals = (ps: Piece[]) => {
+    const t = new Map<number, number>();
+    for (const p of ps) t.set(seatOfArmy(s, p.army), (t.get(seatOfArmy(s, p.army)) ?? 0) + UNITS[p.kind].power);
+    return [...t].map(([seat, p]) => ({ seat, p })).sort((x, y) => y.p - x.p);
+  };
+  for (let guard = 0; guard < 50; guard++) {
+    let bounced = false;
+    for (const [loc, ps] of contested()) {
+      const t = totals(ps);
+      if (t[0].p !== t[1].p) continue;
+      const tied = new Set(t.filter(x => x.p === t[0].p).map(x => x.seat));
+      const back = ps.filter(p => tied.has(seatOfArmy(s, p.army)) && ctx.moved.has(p.id) && ctx.prev.has(p.id) && !rebounded.has(p.id));
+      if (!back.length) continue;
+      for (const p of back) { p.loc = ctx.prev.get(p.id)!; rebounded.add(p.id); }
+      ev(`↩️ ${locName(loc)} : égalité (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}), les pièces arrivées repartent`);
+      bounced = true;
+    }
+    if (!bounced) break;
+  }
+  // 4. Captures: the strongest side takes every enemy piece on the sector.
+  for (const [loc, ps] of contested()) {
+    const t = totals(ps);
+    if (t[0].p === t[1].p) { ev(`⚖️ ${locName(loc)} : égalité persistante, personne ne capture`); continue; }
+    const win = t[0].seat;
+    const mine = ps.filter(p => seatOfArmy(s, p.army) === win);
+    // Captured pieces go to the reserve of the winning army with the most power here.
+    const byArmy = s.seats[win].armies.map(c => ({ c, v: value(mine.filter(p => p.army === c)) })).sort((x, y) => y.v - x.v);
+    const to = byArmy[0].c;
+    const lost = ps.filter(p => seatOfArmy(s, p.army) !== win);
+    for (const p of lost) { p.army = to; p.loc = 'RV'; }
+    ev(`⚔️ ${locName(loc)} : ${seatName(win)} gagne (${t.map(x => `${seatName(x.seat)} ${x.p}`).join(' / ')}) et capture ${lost.length} pièce(s)`);
+  }
+
+  // 5. Power: 1 per enemy territory (still holding its flag) occupied, capped per army.
+  for (const a of s.armies) if (a.alive) {
+    const occupied = new Set<Color>();
+    for (const p of s.pieces) {
+      if (p.army !== a.color || p.loc === 'RV') continue;
+      const sec = SECTORS[p.loc];
+      if (sec.kind !== 'land' || !sec.territory) continue;
+      const owner = s.armies.find(x => x.color === sec.territory);
+      if (owner && owner.alive && owner.seat !== a.seat) occupied.add(sec.territory);
+    }
+    const gain = Math.min(occupied.size, s.powerCap);
+    if (gain) { a.power += gain; ev(`⚡ ${COLOR_FR[a.color]} récolte ${gain} Power`); }
+  }
+
+  // 6. Flags: a side alone on an enemy HQ with at least one Soldat or Régiment takes the flag.
+  for (const a of s.armies) if (a.alive) {
+    const there = s.pieces.filter(p => p.loc === hqOf(a.color));
+    const seats = new Set(there.map(p => seatOfArmy(s, p.army)));
+    if (seats.size !== 1 || seats.has(a.seat)) continue;
+    const infantry = there.find(p => p.kind === 'S' || p.kind === 'R');
+    if (!infantry) continue;
+    const captor = armyOf(s, infantry.army);
+    a.alive = false;
+    captor.flags.push(...a.flags);
+    a.flags = [];
+    captor.power += a.power; a.power = 0;
+    for (const p of s.pieces) if (p.army === a.color) { p.army = captor.color; p.loc = 'RV'; }
+    ev(`🚩 ${seatName(captor.seat)} (${COLOR_FR[captor.color]}) prend le drapeau ${COLOR_FR[a.color]} !`);
+  }
+
+  // Victory.
+  const aliveSeats = [...new Set(s.armies.filter(a => a.alive).map(a => a.seat))];
+  if (aliveSeats.length === 1) {
+    s.winner = aliveSeats[0]; s.endReason = 'flags';
+    ev(`🏆 ${seatName(s.winner)} a pris tous les drapeaux !`);
+  } else if (s.lastRound) {
+    const rank = aliveSeats.map(i => ({ i, p: totalPower(s, i), f: s.armies.filter(a => a.seat === i).reduce((t, a) => t + a.flags.length, 0) }))
+      .sort((x, y) => y.p - x.p || y.f - x.f);
+    s.winner = rank[0].i; s.endReason = 'time';
+    ev(`⏰ Temps écoulé. ${seatName(s.winner)} gagne avec ${rank[0].p} de puissance totale`);
+  }
+  s.report = report;
+  s.round++;
+  s.arbiter = (s.arbiter + 1) % s.seats.length;
+  return s;
+}
+
+/** No legal order this round: give back 1 Power, or turn the smallest piece into Power first. */
+function penalty(s: GameState, a: Army, ev: (t: string) => void) {
+  let converted = '';
+  if (a.power < 1) {
+    const ps = s.pieces.filter(p => p.army === a.color && p.kind !== 'M').sort((x, y) => UNITS[x.kind].power - UNITS[y.kind].power);
+    const p = ps[0];
+    if (!p) return;
+    s.pieces = s.pieces.filter(x => x !== p);
+    const spec = UNITS[p.kind];
+    if (spec.group === 2) {
+      // Split into three base pieces, one of which becomes Power.
+      for (let i = 0; i < 2; i++) s.pieces.push({ id: s.nextId++, kind: spec.base!, army: a.color, loc: 'RV' });
+      a.power += UNITS[spec.base!].power;
+    } else a.power += spec.power;
+    converted = `, convertit un ${spec.name} en Power`;
+  }
+  a.power -= 1;
+  ev(`⚠️ ${COLOR_FR[a.color]} n’a exécuté aucun ordre valable${converted} et perd 1 Power`);
 }
