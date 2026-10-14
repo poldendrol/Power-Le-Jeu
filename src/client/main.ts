@@ -26,7 +26,7 @@ let orders: SeatOrders = {};
 let plannedRound = 0;
 let army: Color | null = null;   // army whose orders are being written
 let sel: Loc | null = null;       // selected sector or reserve
-let mode: { t: 'move'; kind: Kind; from: Loc } | { t: 'launch'; from: Loc } | null = null;
+let mode: { t: 'move'; kind: Kind; from: Loc } | { t: 'pick'; kind: Kind } | { t: 'launch'; from: Loc } | null = null;
 
 const send = (m: ClientMsg) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
 
@@ -153,9 +153,9 @@ let focusKind: Kind | null = null; // highlight this kind of your pieces on the 
 
 function pieceToken(k: Kind, color: Color, n: number, x: number, y: number, extra = '') {
   return `<g class="token ${extra}" transform="translate(${x},${y})">
-    <circle r="11.5" fill="${ARMY_HEX[color]}" class="token-bg"/>
-    <path d="${ICON[k]}" transform="translate(-7.2,-7.2) scale(.6)" fill="#fff"/>
-    ${n > 1 ? `<g transform="translate(9,-8)"><circle r="6.5" class="badge"/><text class="badge-text" y="3">${n}</text></g>` : ''}
+    <ellipse rx="11" ry="3.5" cy="11" class="token-shadow"/>
+    <path d="${ICON[k]}" transform="translate(-13,-13) scale(1.08)" fill="${ARMY_HEX[color]}" class="token-shape"/>
+    ${n > 1 ? `<g transform="translate(11,8)"><circle r="6.5" class="badge"/><text class="badge-text" y="3">${n}</text></g>` : ''}
   </g>`;
 }
 
@@ -168,13 +168,28 @@ function renderGame(r: RoomView, g: GameState) {
   const { s: proj, ctx, errors } = project(g);
   const list = army ? orders[army] ?? [] : [];
 
+  const center = (id: number) => { const b = bbox(SECTORS[id]); return [b.x + b.w / 2, b.y + b.h / 2]; };
   // Target sectors for the current mode.
   let targets = new Set<number>();
+  // Pick mode: a unit type was chosen in the army panel; any sector one of them can reach is a target.
+  const pickFrom = new Map<number, Loc>(); // destination -> source sector used for it
+  const sources = new Set<number>();
   if (mode?.t === 'move') targets = mode.from === 'RV' ? new Set([hqOf(army!)]) : reachable(mode.kind, mode.from);
+  else if (mode?.t === 'pick') {
+    const k = mode.kind;
+    const free = proj.pieces.filter(p => p.army === army && p.kind === k && !ctx.moved.has(p.id));
+    const locs = [...new Set(free.map(p => p.loc))];
+    const dist = (a: Loc, b: number) => { if (a === 'RV') return 99; const [ax, ay] = center(a), [bx, by] = center(b); return Math.hypot(ax - bx, ay - by); };
+    for (const l of locs) {
+      if (l !== 'RV') sources.add(l);
+      const reach = l === 'RV' ? new Set([hqOf(army!)]) : reachable(k, l);
+      for (const d of reach) { const cur = pickFrom.get(d); if (cur === undefined || dist(l, d) < dist(cur, d)) pickFrom.set(d, l); }
+    }
+    targets = new Set(pickFrom.keys());
+  }
   else if (mode?.t === 'launch') targets = new Set(SECTORS.map(x => x.id));
 
   // ----- Board -----
-  const center = (id: number) => { const b = bbox(SECTORS[id]); return [b.x + b.w / 2, b.y + b.h / 2]; };
   const labels = SECTORS.map(sec => {
     const b = bbox(sec);
     const txt = sec.kind === 'hq' ? `HQ ${'⚑'.repeat(armyOf(g, sec.territory!)?.alive ? armyOf(g, sec.territory!).flags.length : 0)}` : sec.code;
@@ -189,19 +204,19 @@ function renderGame(r: RoomView, g: GameState) {
       const ps = here.filter(p => p.army === c && p.kind === k);
       if (!ps.length) continue;
       const planned = ps.some(p => ctx.moved.has(p.id) && ctx.prev.get(p.id) !== sec.id);
-      const focus = focusKind === k && c === army;
+      const focus = (focusKind === k || (mode?.t === 'pick' && mode.kind === k)) && c === army;
       items.push({ k, c, n: ps.length, cls: `${planned ? 'planned' : ''} ${focus ? 'focus' : ''}` });
     }
-    const per = Math.max(1, Math.floor((b.w - 8) / 26));
+    const per = Math.max(1, Math.floor((b.w - 6) / 30));
     const rows = Math.ceil(items.length / per);
-    const top = b.y + Math.max(26, (b.h - rows * 26) / 2 + 13);
+    const top = b.y + Math.max(28, (b.h - rows * 30) / 2 + 15);
     return items.map((it, i) => {
       const row = Math.floor(i / per), inRow = Math.min(per, items.length - row * per);
-      const x = b.x + b.w / 2 + ((i % per) - (inRow - 1) / 2) * 26;
-      return pieceToken(it.k, it.c, it.n, x, top + row * 26, it.cls);
+      const x = b.x + b.w / 2 + ((i % per) - (inRow - 1) / 2) * 30;
+      return pieceToken(it.k, it.c, it.n, x, top + row * 30, it.cls);
     }).join('');
   }).join('');
-  const hits = SECTORS.map(sec => `<path d="${sectorPath(sec)}" data-sec="${sec.id}" class="hit ${targets.has(sec.id) ? 'target' : ''} ${sel === sec.id ? 'sel' : ''}"/>`).join('');
+  const hits = SECTORS.map(sec => `<path d="${sectorPath(sec)}" data-sec="${sec.id}" class="hit ${targets.has(sec.id) ? 'target' : ''} ${sources.has(sec.id) ? 'src' : ''} ${sel === sec.id ? 'sel' : ''}"/>`).join('');
   const arrows = list.map(o => {
     if (o.type === 'move' && typeof o.to === 'number') {
       const [tx, ty] = center(o.to);
@@ -247,8 +262,8 @@ function renderGame(r: RoomView, g: GameState) {
       `<button class="tab ${c === army ? 'on' : ''}" data-army="${c}" ${armyOf(g, c).alive ? '' : 'disabled'}><span class="swatch" style="background:${ARMY_HEX[c]}"></span>${COLOR_NAME[c]} <span class="muted">${(orders[c] ?? []).length}/${g.ordersPerArmy}</span></button>`).join('')}</div>` : '';
     const roster = KIND_ORDER.map(k => {
       const onBoard = mine.filter(p => p.kind === k && p.loc !== 'RV').length, inRes = mine.filter(p => p.kind === k && p.loc === 'RV').length;
-      return `<button class="unit ${onBoard + inRes ? '' : 'none'} ${focusKind === k ? 'on' : ''}" data-focus="${k}" title="${UNITS[k].name}: power ${UNITS[k].power}${UNITS[k].move ? `, moves ${UNITS[k].move}` : ''}">
-        <span class="unit-icon" style="background:${ARMY_HEX[army!]}">${iconSvg(k, 17, '#fff')}</span>
+      return `<button class="unit ${onBoard + inRes ? '' : 'none'} ${mode?.t === 'pick' && mode.kind === k ? 'on' : ''}" data-pick="${k}" title="${UNITS[k].name}: power ${UNITS[k].power}${UNITS[k].move ? `, moves ${UNITS[k].move}` : ''}">
+        <span class="unit-icon">${iconSvg(k, 26, ARMY_HEX[army!])}</span>
         <span class="unit-text"><span class="unit-name">${UNITS[k].name}</span><span class="unit-count"><b>${onBoard}</b>${inRes ? `<i>+${inRes} in reserve</i>` : ''}</span></span>
       </button>`;
     }).join('');
@@ -278,9 +293,9 @@ function renderGame(r: RoomView, g: GameState) {
       return `<li class="slot ${errors.has(o) ? 'bad' : ''}"><span class="num">${i + 1}</span><span>${esc(describeOrder(o, army!))}${errors.has(o) ? `<em>${esc(errors.get(o)!)}</em>` : ''}</span><button class="x" data-del="${i}" title="Remove">✕</button></li>`;
     }).join('');
     const hint = mode
-      ? `<div class="hint active">${mode.t === 'move' ? `Pick a <b>gold</b> sector to send the ${UNITS[mode.kind].name}.` : `Pick the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="chipbtn" data-reserve="${a.color}"><span class="swatch" style="background:${ARMY_HEX[a.color]}"></span>${COLOR_NAME[a.color]}</button>`).join(' ')}`} <button id="cancel" class="link">Cancel</button></div>`
+      ? `<div class="hint active">${mode.t === 'move' ? `Click a <b>gold</b> sector to send the ${UNITS[mode.kind].name}.` : mode.t === 'pick' ? `Click a <b>gold</b> sector to move a ${UNITS[mode.kind].name} there.${targets.size ? '' : ' None of them can move this round.'}` : `Pick the megamissile's target, or a reserve: ${g.armies.filter(a => a.alive).map(a => `<button class="chipbtn" data-reserve="${a.color}"><span class="swatch" style="background:${ARMY_HEX[a.color]}"></span>${COLOR_NAME[a.color]}</button>`).join(' ')}`} <button id="cancel" class="link">Cancel</button></div>`
       : sel !== null ? locPanel(proj, ctx, sel)
-      : `<div class="hint">Click one of your sectors on the map, or open your reserve.</div>`;
+      : `<div class="hint">Click a unit in your army above, then a sector on the map. Or click a sector to see what's there.</div>`;
     command = `<section class="card">
       <div class="card-head"><h3>Orders</h3><span class="muted small">${list.length} / ${g.ordersPerArmy}</span>
         <button class="ghost sm" id="reserve">Reserve · ⚡${armyOf(proj, army!).power}</button></div>
@@ -327,6 +342,7 @@ function renderGame(r: RoomView, g: GameState) {
       if (!canPlan) return;
       if (mode && targets.has(id)) {
         if (mode.t === 'move') add({ type: 'move', kind: mode.kind, from: mode.from, to: id });
+        else if (mode.t === 'pick') add({ type: 'move', kind: mode.kind, from: pickFrom.get(id)!, to: id });
         else add({ type: 'launch', from: mode.from, target: id });
         return;
       }
@@ -335,7 +351,17 @@ function renderGame(r: RoomView, g: GameState) {
       render();
     });
   });
-  app.querySelectorAll<HTMLElement>('[data-focus]').forEach(b => b.onclick = () => { focusKind = focusKind === b.dataset.focus ? null : b.dataset.focus as Kind; render(); });
+  app.querySelectorAll<HTMLElement>('[data-pick]').forEach(b => b.onclick = () => {
+    const k = b.dataset.pick as Kind;
+    if (!canPlan) { focusKind = focusKind === k ? null : k; return render(); }
+    if (mode?.t === 'pick' && mode.kind === k) { mode = null; return render(); }
+    sel = null;
+    if (k === 'M') {
+      const m = proj.pieces.find(p => p.army === army && p.kind === 'M');
+      mode = m ? { t: 'launch', from: m.loc } : null;
+    } else mode = { t: 'pick', kind: k };
+    render();
+  });
   app.querySelectorAll<HTMLElement>('[data-army]').forEach(b => b.onclick = () => { army = b.dataset.army as Color; sel = null; mode = null; render(); });
   app.querySelectorAll<HTMLElement>('[data-move]').forEach(b => b.onclick = () => { mode = { t: 'move', kind: b.dataset.move as Kind, from: sel! }; render(); });
   app.querySelectorAll<HTMLElement>('[data-upgrade]').forEach(b => b.onclick = () => add({ type: 'upgrade', kind: b.dataset.upgrade as 'S', at: sel! }));
@@ -362,7 +388,7 @@ function renderGame(r: RoomView, g: GameState) {
     if (err) { error = err; mode = null; return render(); }
     orders[army!] = [...cur, o];
     error = '';
-    mode = null;
+    mode = mode?.t === 'pick' && cur.length + 1 < g.ordersPerArmy ? mode : null;
     if (o.type === 'move') sel = null;
     changed();
   }
@@ -380,7 +406,7 @@ function locPanel(s: GameState, ctx: ReturnType<typeof newCtx>, at: Loc) {
       UNITS[k].up && all.length >= 3 ? `<button class="sm ghost" data-upgrade="${k}">3 → ${UNITS[UNITS[k].up!].name}</button>` : '',
       k === 'M' ? `<button class="sm danger" data-launch>Launch</button>` : '',
     ].join('');
-    return `<div class="urow"><span class="unit-icon sm" style="background:${ARMY_HEX[army!]}">${iconSvg(k, 16, '#fff')}</span>
+    return `<div class="urow"><span class="unit-icon sm">${iconSvg(k, 20, ARMY_HEX[army!])}</span>
       <span class="urow-name">${UNITS[k].name} <b>×${all.length}</b>${free.length < all.length && k !== 'M' ? ` <em>${all.length - free.length} ordered</em>` : ''}</span>${btns}</div>`;
   }).join('');
   const buys = at === 'RV' ? `<div class="buy"><span class="muted small">Buy with Power</span><div class="buy-row">${BASE_KINDS.map(k => `<button class="buybtn" data-buy="${k}" ${a.power < UNITS[k].power ? 'disabled' : ''}>${iconSvg(k, 16)}<span>${UNITS[k].name}</span><b>⚡${UNITS[k].power}</b></button>`).join('')}</div></div>` : '';
