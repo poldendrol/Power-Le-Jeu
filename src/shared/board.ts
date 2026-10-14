@@ -1,11 +1,11 @@
-// The board, as a graph of sectors. The rules page has no picture of the board,
-// so this layout is a RECONSTRUCTION built to fit everything the rules say:
-// four territories of nine sectors (0-8, sector 4 in the middle), a headquarters
-// on the board edge of each, five islands (Nord, Sud, Est, Ouest, X) and twelve
-// sea sectors. Replace MAP once we have a photo of the real board.
+// The board, as a graph of sectors, copied from the original layout: four
+// territories of nine sectors (0-8, sector 4 in the middle) each surrounded by
+// sea, a headquarters in each corner, the islands Nord, Sud, Est, Ouest between
+// territories along the edges and Île X in the centre, and twelve sea sectors
+// (an outer strip along each side of each territory, plus four channels).
 
 export type Color = 'red' | 'blue' | 'yellow' | 'green';
-export const COLORS: Color[] = ['red', 'blue', 'yellow', 'green']; // clockwise from top left
+export const COLORS: Color[] = ['yellow', 'green', 'red', 'blue']; // clockwise from top left
 export const LETTER: Record<Color, string> = { red: 'R', blue: 'B', yellow: 'J', green: 'V' };
 export const COLOR_FR: Record<Color, string> = { red: 'Rouge', blue: 'Bleu', yellow: 'Jaune', green: 'Vert' };
 
@@ -23,20 +23,26 @@ export interface Sector {
   coastal: boolean;      // land sector a ship may enter
 }
 
-// Each token is one cell of an 11×11 grid; "--" is off the board.
-// Territory sectors are numbered from the board edge (0) toward Île X (8).
+// Each token is one cell of a 9×9 grid. Territory sectors are numbered from
+// the HQ corner (0) to the corner facing Île X (8).
 const MAP = `
---  QR  QR  QR  S1  IN  S3  QB  QB  QB  --
---  R0  R1  R2  S1  IN  S3  B2  B1  B0  --
---  R3  R4  R5  S1  S2  S3  B5  B4  B3  --
---  R6  R7  R8  S1  S2  S3  B8  B7  B6  --
-S12 S12 S12 S12 IX  IX  IX  S4  S4  S4  S4
-IW  IW  S11 S11 IX  IX  IX  S5  S5  IE  IE
-S10 S10 S10 S10 IX  IX  IX  S6  S6  S6  S6
---  V6  V7  V8  S9  S8  S7  J8  J7  J6  --
---  V3  V4  V5  S9  S8  S7  J5  J4  J3  --
---  V0  V1  V2  S9  IS  S7  J2  J1  J0  --
---  QV  QV  QV  S9  IS  S7  QJ  QJ  QJ  --`;
+QJ  S1  S1  S1  IN  S2  S2  S2  QV
+S11 J0  J1  J2  S3  V2  V1  V0  S4
+S11 J3  J4  J5  S3  V5  V4  V3  S4
+S11 J6  J7  J8  S3  V8  V7  V6  S4
+IW  S12 S12 S12 IX  S6  S6  S6  IE
+S10 B6  B7  B8  S9  R8  R7  R6  S5
+S10 B3  B4  B5  S9  R5  R4  R3  S5
+S10 B0  B1  B2  S9  R2  R1  R0  S5
+QB  S8  S8  S8  IS  S7  S7  S7  QR`;
+
+// Drawing sizes: sea strips and channels are narrower than land sectors.
+const SIZES = [66, 76, 76, 76, 58, 76, 76, 76, 66];
+export const COL_X = SIZES.reduce<number[]>((a, w, i) => [...a, i ? a[i - 1] + SIZES[i - 1] : 0], []);
+export const COL_W = SIZES;
+export const ROW_Y = COL_X;
+export const ROW_H = SIZES;
+export const BOARD_SIZE = SIZES.reduce((a, b) => a + b, 0);
 
 export const GRID = MAP.trim().split('\n').map(r => r.trim().split(/\s+/));
 export const GW = GRID[0].length;

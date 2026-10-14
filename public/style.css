@@ -58,7 +58,7 @@ details { margin-top: 8px; font-size: 13px; }
 .chip { stroke: rgba(0,0,0,.35); pointer-events: none; }
 .chip.red { fill: var(--red); } .chip.blue { fill: var(--blue); } .chip.green { fill: var(--green); } .chip.yellow { fill: var(--yellow); }
 .planned .chip { stroke: var(--text); stroke-width: 2; stroke-dasharray: 3 2; }
-.chip-text { font-size: 9.5px; font-weight: 600; fill: #fff; pointer-events: none; }
+.chip-text { font-size: 9px; font-weight: 600; fill: #fff; pointer-events: none; }
 .arrow { stroke: var(--text); stroke-width: 3; opacity: .75; pointer-events: none; }
 .arrow.bad { stroke: var(--accent); stroke-dasharray: 5 4; }
 .arrowhead { fill: var(--text); }

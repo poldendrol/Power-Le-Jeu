@@ -1,4 +1,4 @@
-import { GH, GRID, GW, sectorAt } from '../shared/board';
+import { BOARD_SIZE, COL_W, COL_X, GH, GRID, GW, ROW_H, ROW_Y, sectorAt } from '../shared/board';
 import {
   BASE_KINDS, COLOR_FR, LETTER, MISSILE_COST, SECTORS, UNITS, armyOf, describeOrder, executeOrder, hqOf, locName,
   newCtx, pickMissile, reachable, totalPower, value,
@@ -92,7 +92,7 @@ function renderLobby(r: RoomView) {
   const host = r.you === 0;
   const n = r.seats.length;
   const variant = n === 2 ? 'À 2 : chaque joueur commande deux armées voisines (10 ordres par manche).'
-    : n === 3 ? 'À 3 : le territoire Vert reste vide.' : n === 4 ? 'À 4 : une armée chacun.' : '';
+    : n === 3 ? 'À 3 : le territoire Bleu reste vide.' : n === 4 ? 'À 4 : une armée chacun.' : '';
   const opt = (id: string, cur: number, vals: [number, string][]) =>
     `<select id="${id}" ${host ? '' : 'disabled'}>${vals.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   app.innerHTML = `
@@ -145,28 +145,29 @@ function renderGame(r: RoomView, g: GameState) {
   else if (mode?.t === 'launch') targets = new Set(SECTORS.map(x => x.id));
 
   // ----- Board -----
-  const S = 60;
+  const S = 72;
+  const X = (x: number) => COL_X[x] ?? BOARD_SIZE, Y = (y: number) => ROW_Y[y] ?? BOARD_SIZE;
   const cells: string[] = [];
   for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
     const sec = sectorAt(x, y);
     if (!sec) continue;
     const cls = ['cell', sec.kind, sec.territory ? `t-${sec.territory}` : '', targets.has(sec.id) ? 'target' : '', sel === sec.id ? 'sel' : ''].join(' ');
-    cells.push(`<rect x="${x * S}" y="${y * S}" width="${S}" height="${S}" class="${cls}" data-sec="${sec.id}"/>`);
+    cells.push(`<rect x="${X(x)}" y="${Y(y)}" width="${COL_W[x]}" height="${ROW_H[y]}" class="${cls}" data-sec="${sec.id}"/>`);
   }
   // Thick borders between different sectors.
   const borders: string[] = [];
   for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
     const t = GRID[y][x];
     if (t === '--') continue;
-    if (GRID[y][x + 1] !== t) borders.push(`M${(x + 1) * S},${y * S}v${S}`);
-    if (GRID[y + 1]?.[x] !== t) borders.push(`M${x * S},${(y + 1) * S}h${S}`);
-    if (x === 0 || GRID[y][x - 1] === '--') borders.push(`M${x * S},${y * S}v${S}`);
-    if (y === 0 || GRID[y - 1]?.[x] === '--') borders.push(`M${x * S},${y * S}h${S}`);
+    if (GRID[y][x + 1] !== t) borders.push(`M${X(x + 1)},${Y(y)}v${ROW_H[y]}`);
+    if (GRID[y + 1]?.[x] !== t) borders.push(`M${X(x)},${Y(y + 1)}h${COL_W[x]}`);
+    if (x === 0 || GRID[y][x - 1] === '--') borders.push(`M${X(x)},${Y(y)}v${ROW_H[y]}`);
+    if (y === 0 || GRID[y - 1]?.[x] === '--') borders.push(`M${X(x)},${Y(y)}h${COL_W[x]}`);
   }
   const labels = SECTORS.map(sec => {
     const [x, y] = sec.anchor;
     const hqFlag = sec.kind === 'hq' ? ` ${flagsAt(g, sec.territory!)}` : '';
-    return `<text x="${x * S + 3}" y="${y * S + 11}" class="code">${sec.code}${hqFlag}</text>`;
+    return `<text x="${X(x) + 3}" y="${Y(y) + 11}" class="code">${sec.code}${hqFlag}</text>`;
   }).join('');
   const chips = SECTORS.map(sec => {
     const here = proj.pieces.filter(p => p.loc === sec.id);
@@ -176,18 +177,18 @@ function renderGame(r: RoomView, g: GameState) {
       const ps = here.filter(p => p.army === c);
       const txt = kindsSummary(ps.map(p => p.kind));
       const movedIn = ps.some(p => ctx.moved.has(p.id) && ctx.prev.get(p.id) !== sec.id);
-      return `<g transform="translate(${x * S + 2},${y * S + 14 + i * 14})" class="${movedIn ? 'planned' : ''}">
-        <rect width="${S - 4}" height="13" rx="3" class="chip ${c}"/><text x="3" y="10" class="chip-text">${txt}</text></g>`;
+      return `<g transform="translate(${X(x) + 2},${Y(y) + 14 + i * 14})" class="${movedIn ? 'planned' : ''}">
+        <rect width="${COL_W[x] - 4}" height="13" rx="3" class="chip ${c}"/><text x="3" y="10" class="chip-text">${txt}</text></g>`;
     }).join('');
   }).join('');
   const arrows = list.map(o => {
-    const c = (id: number) => { const [x, y] = SECTORS[id].anchor; return [x * S + S / 2, y * S + S / 2]; };
+    const c = (id: number) => { const [x, y] = SECTORS[id].anchor; return [X(x) + COL_W[x] / 2, Y(y) + ROW_H[y] / 2]; };
     if (o.type === 'move' && typeof o.to === 'number') {
       const to = c(o.to);
       const from = o.from === 'RV' ? [to[0], to[1] - S * 0.8] : c(o.from);
       return `<line x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" class="arrow ${errors.has(o) ? 'bad' : ''}" marker-end="url(#head)"/>`;
     }
-    if (o.type === 'launch' && o.target !== 'RV') { const t = c(o.target); return `<circle cx="${t[0]}" cy="${t[1]}" r="${S / 2 - 6}" class="boom"/>`; }
+    if (o.type === 'launch' && o.target !== 'RV') { const t = c(o.target); return `<circle cx="${t[0]}" cy="${t[1]}" r="${S / 2 - 10}" class="boom"/>`; }
     return '';
   }).join('');
 
@@ -229,7 +230,7 @@ function renderGame(r: RoomView, g: GameState) {
 
   app.innerHTML = `
     <div class="game">
-      <div class="board-wrap"><svg viewBox="0 0 ${GW * S} ${GH * S}" class="board">
+      <div class="board-wrap"><svg viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" class="board">
         <defs><marker id="head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" class="arrowhead"/></marker></defs>
         ${cells.join('')}<path d="${borders.join('')}" class="borders"/>${labels}${chips}${arrows}</svg></div>
       <aside class="panel">${head}${action}${error ? `<p class="error">${esc(error)}</p>` : ''}${report}</aside>

@@ -85,8 +85,8 @@ export type Order =
 export function newGame(names: string[]): GameState {
   const n = names.length;
   if (n < 2 || n > 4) throw new Error('2 à 4 joueurs');
-  // Two players: each commands two neighbouring armies. Three players: the green territory stays empty.
-  const split: Color[][] = n === 2 ? [['red', 'green'], ['blue', 'yellow']] : COLORS.slice(0, n).map(c => [c]);
+  // Two players: each commands two neighbouring armies. Three players: the blue territory stays empty.
+  const split: Color[][] = n === 2 ? [['yellow', 'blue'], ['green', 'red']] : COLORS.slice(0, n).map(c => [c]);
   const s: GameState = {
     round: 1, arbiter: 0, seats: names.map((name, i) => ({ name, armies: split[i] })), armies: [], pieces: [], nextId: 1,
     ordersPerArmy: ORDERS_PER_ARMY, powerCap: n === 2 ? 2 : 3, lastRound: false, report: null,

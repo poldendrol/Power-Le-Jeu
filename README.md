@@ -13,7 +13,7 @@ and all orders resolve at the same time.
 ## Layout
 
 - `src/shared/rules.ts` – units, orders, exchanges, méga-missiles, conflicts, Power and flags, following http://jeuxstrategie.free.fr/Power_complet.php
-- `src/shared/board.ts` – the board as a grid of sectors. The rules page has no picture of the board, so this layout is a reconstruction; edit `MAP` to match the real one
+- `src/shared/board.ts` – the board as a grid of sectors, copied from a screenshot of the original
 - `src/server/index.ts` – HTTP + WebSocket server, game rooms kept in memory
 - `src/client/main.ts` – browser UI (board as SVG)
 
