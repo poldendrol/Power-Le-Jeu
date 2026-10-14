@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "dev": "npm run build && node dist/server.js",
     "test": "tsx src/shared/rules.test.ts",
+    "sim": "tsx src/shared/ai.sim.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -14,6 +14,7 @@ and all orders resolve at the same time.
 
 - `src/shared/rules.ts` – units, orders, exchanges, méga-missiles, conflicts, Power and flags, following http://jeuxstrategie.free.fr/Power_complet.php
 - `src/shared/board.ts` – the board as a grid of sectors, copied from a screenshot of the original
+- `src/shared/ai.ts` – computer player (greedy order planner); `npm run sim` plays bot-vs-bot games
 - `src/server/index.ts` – HTTP + WebSocket server, game rooms kept in memory
 - `src/client/main.ts` – browser UI (board as SVG)
 

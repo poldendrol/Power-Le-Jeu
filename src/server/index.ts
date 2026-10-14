@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
+import { botOrders } from '../shared/ai';
 import { newGame, resolveRound, type GameState, type Order } from '../shared/rules';
 import type { ClientMsg, Options, RoomView, SeatOrders, ServerMsg } from '../shared/protocol';
 
@@ -11,7 +12,7 @@ const PUBLIC = join(fileURLToPath(import.meta.url), '../../public');
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const PAUSE_MS = 3 * 60_000;
 
-interface Seat { name: string; token: string; socket: WebSocket | null; draft: SeatOrders | null; submitted: boolean; pauseUsed: boolean }
+interface Seat { name: string; bot: boolean; token: string; socket: WebSocket | null; draft: SeatOrders | null; submitted: boolean; pauseUsed: boolean }
 interface Room {
   id: string; seats: Seat[]; game: GameState | null; options: Options;
   deadline: number | null; gameEndsAt: number | null; timer: NodeJS.Timeout | null; touched: number;
@@ -50,7 +51,7 @@ wss.on('connection', ws => {
         if (room.game || room.seats.length >= 4) {
           send({ t: 'error', message: room.game ? 'This game has already started: you can watch it.' : 'This game is full (4 players).' });
         } else {
-          seat = { name: String(msg.name).slice(0, 20) || 'Player', token: String(msg.token), socket: null, draft: null, submitted: false, pauseUsed: false };
+          seat = { name: String(msg.name).slice(0, 20) || 'Player', bot: false, token: String(msg.token), socket: null, draft: null, submitted: false, pauseUsed: false };
           room.seats.push(seat);
         }
       }
@@ -66,6 +67,13 @@ wss.on('connection', ws => {
       const timerMin = [0, 1, 2, 3, 5, 10].includes(msg.options.timerMin) ? msg.options.timerMin : 3;
       const limitMin = [0, 60, 90, 120, 180].includes(msg.options.limitMin) ? msg.options.limitMin : 0;
       r.options = { timerMin, limitMin };
+    } else if (msg.t === 'addBot') {
+      if (r.game || idx !== 0 || r.seats.length >= 4) return;
+      const n = r.seats.filter(s => s.bot).length + 1;
+      r.seats.push({ name: `Computer ${n}`, bot: true, token: `bot-${Math.random()}`, socket: null, draft: null, submitted: false, pauseUsed: true });
+    } else if (msg.t === 'removeBot') {
+      if (r.game || idx !== 0 || !r.seats[msg.seat]?.bot) return;
+      r.seats.splice(msg.seat, 1);
     } else if (msg.t === 'start') {
       if (r.game || idx !== 0) return;
       if (r.seats.length < 2) return send({ t: 'error', message: 'At least 2 players are needed' });
@@ -109,6 +117,19 @@ function sanitize(g: GameState, seat: number, orders: SeatOrders): SeatOrders {
 function startRound(r: Room) {
   const g = r.game!;
   for (const s of r.seats) { s.draft = null; s.submitted = false; }
+  // Computer players write their orders straight away.
+  r.seats.forEach((s, i) => {
+    if (!s.bot || g.winner !== undefined || !g.armies.some(a => a.seat === i && a.alive)) return;
+    s.draft = botOrders(g, i);
+    s.submitted = true;
+  });
+  // Only computers left in the game: keep it going at a watchable pace.
+  if (g.winner === undefined && r.seats.every((s, i) => s.submitted || !g.armies.some(a => a.seat === i && a.alive))) {
+    if (r.timer) clearTimeout(r.timer);
+    r.deadline = null;
+    r.timer = setTimeout(() => endRound(r), 2500);
+    return;
+  }
   if (r.gameEndsAt && Date.now() >= r.gameEndsAt && !g.lastRound) g.lastRound = true;
   // Two armies to command means twice the writing time, as in the two-player rules.
   const armies = Math.max(...g.seats.map(s => s.armies.length));
@@ -133,7 +154,7 @@ function endRound(r: Room) {
 function broadcast(r: Room) {
   const view = (you: number | null): RoomView => ({
     id: r.id,
-    seats: r.seats.map(s => ({ name: s.name, connected: !!s.socket, submitted: s.submitted, pauseUsed: s.pauseUsed })),
+    seats: r.seats.map(s => ({ name: s.name, bot: s.bot, connected: s.bot || !!s.socket, submitted: s.submitted, pauseUsed: s.pauseUsed })),
     you, options: r.options, game: r.game, deadline: r.deadline, gameEndsAt: r.gameEndsAt, now: Date.now(),
     draft: you === null ? null : r.seats[you].draft,
   });

@@ -65,7 +65,7 @@ function renderHome() {
   app.innerHTML = `
     <div class="card narrow">
       <h1>Power</h1>
-      <p class="muted">Create a game and send the link to your friends (2 to 4 players).</p>
+      <p class="muted">Create a game and send the link to your friends, or add computer players (2 to 4 players in all).</p>
       <button id="create">Create a game</button>
     </div>`;
   $('#create')!.onclick = () => { location.hash = Math.random().toString(36).slice(2, 8); };
@@ -100,7 +100,8 @@ function renderLobby(r: RoomView) {
       <h1>Game ${esc(r.id)}</h1>
       <p>Send this link to your friends:</p>
       <div class="row"><input readonly value="${esc(location.href)}"><button id="copy" class="secondary">Copy</button></div>
-      <ul class="seats">${r.seats.map((s, i) => `<li>${esc(s.name)}${i === r.you ? ' (you)' : ''}${i === 0 ? ' · host' : ''}${s.connected ? '' : ' <span class="muted">· disconnected</span>'}</li>`).join('')}</ul>
+      <ul class="seats">${r.seats.map((s, i) => `<li>${s.bot ? '🤖 ' : ''}${esc(s.name)}${i === r.you ? ' (you)' : ''}${i === 0 ? ' · host' : ''}${s.connected ? '' : ' <span class="muted">· disconnected</span>'}${s.bot && host ? ` <button class="mini secondary" data-rmbot="${i}">Remove</button>` : ''}</li>`).join('')}</ul>
+      ${host && n < 4 ? '<button id="addbot" class="secondary">🤖 Add a computer player</button>' : ''}
       <p class="muted">${variant}</p>
       <label>Time to write orders ${opt('timer', r.options.timerMin, [[0, 'Unlimited'], [1, '1 min'], [2, '2 min'], [3, '3 min (rules)'], [5, '5 min'], [10, '10 min']])}</label>
       <label>Game length ${opt('limit', r.options.limitMin, [[0, 'Until the last flag'], [60, '1 h'], [90, '1 h 30'], [120, '2 h (rules)'], [180, '3 h']])}</label>
@@ -113,6 +114,8 @@ function renderLobby(r: RoomView) {
     const sendOpts = () => send({ t: 'options', options: { timerMin: Number(($('#timer') as HTMLSelectElement).value), limitMin: Number(($('#limit') as HTMLSelectElement).value) } satisfies Options });
     $('#timer')!.onchange = sendOpts; $('#limit')!.onchange = sendOpts;
     $('#start')!.onclick = () => send({ t: 'start' });
+    const add = $('#addbot'); if (add) add.onclick = () => send({ t: 'addBot' });
+    app.querySelectorAll<HTMLElement>('[data-rmbot]').forEach(b => b.onclick = () => send({ t: 'removeBot', seat: Number(b.dataset.rmbot) }));
   }
 }
 
@@ -199,7 +202,7 @@ function renderGame(r: RoomView, g: GameState) {
     ${g.lastRound && !over ? '<p class="banner">Last round!</p>' : ''}
     <ul class="players">${g.seats.map((seat, i) => `
       <li class="${seat.armies.every(c => !armyOf(g, c).alive) ? 'dead' : ''}">
-        <b>${esc(seat.name)}</b>${i === me ? ' (you)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
+        ${r.seats[i]?.bot ? '🤖 ' : ''}<b>${esc(seat.name)}</b>${i === me ? ' (you)' : ''} ${over ? '' : r.seats[i]?.submitted ? '✅' : '✍️'}
         <span class="muted">· power ${totalPower(g, i)}</span>
         ${seat.armies.map(c => { const a = armyOf(g, c); return `<div class="army"><span class="dot ${c}"></span>${COLOR_NAME[c]} ${a.alive ? '' : '☠️'} <span class="muted">Power ${a.power} · 🚩${a.flags.length} · reserve ${kindsSummary(g.pieces.filter(p => p.army === c && p.loc === 'RV').map(p => p.kind)) || '—'}</span></div>`; }).join('')}
       </li>`).join('')}
